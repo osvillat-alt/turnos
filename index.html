@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Turnos</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#00338D" />
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Turnos">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <style>
+    :root { --primary:#00338D; --border:#B0B0B0; }
+    *{ box-sizing:border-box; }
+    body{ margin:0; font-family:system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background:#fff; color:#111; }
+    header{ display:grid; grid-template-columns: 1fr auto; align-items:center; padding:12px 16px; border-bottom:1px solid #eee; }
+    header nav a{ margin-right:12px; text-decoration:none; color:#00338D; font-weight:600; }
+    header img{ height:28px; }
+    main{ max-width:800px; margin:0 auto; padding:16px; }
+    h1{ font-size:22px; margin:8px 0 16px; color:#111; font-weight:700; }
+    .row{ display:grid; grid-template-columns:1fr auto; gap:8px; align-items:center; }
+    button{ background:var(--primary); color:#fff; border:none; padding:10px 14px; border-radius:10px; font-weight:600; cursor:pointer; }
+    button.secondary{ background:#eee; color:#111; }
+    input[type="date"], input[type="number"], select { padding:10px; border:1px solid #ccc; border-radius:8px; }
+    .card{ border:1px solid var(--border); border-radius:12px; padding:12px; }
+    .muted{ opacity:.75; font-size:12px; }
+    #configPanel{ display:none; gap:12px; grid-template-columns:1fr 1fr; }
+    .mt8{ margin-top:8px; } .mt12{ margin-top:12px; } .mt16{ margin-top:16px; }
+  </style>
+</head>
+<body>
+  <header>
+    <nav>
+      <a href="index.html">Consulta personal</a>
+      <a href="rol.html">Rol de turnos</a>
+    </nav>
+    <img src="icons/cemex_logo.png" alt="CEMEX" />
+  </header>
+
+  <main>
+    <h1>Consulta tu turno</h1>
+
+    <div class="row">
+      <input id="fecha" type="date">
+      <button id="btnConsultar">Consultar</button>
+    </div>
+
+    <div class="card mt12" id="resultado">
+      <div id="lblFecha" style="font-weight:700;"></div>
+      <div id="lblSemana"></div>
+      <div id="lblTurno" style="font-weight:700;"></div>
+      <div id="lblHorario"></div>
+      <div id="lblNota"></div>
+    </div>
+
+    <div class="mt16">
+      <button id="btnToggleCfg">⚙️ Configuración</button>
+      <div id="configPanel" class="mt12">
+        <button id="btnConfigurar">Configurar ciclo</button>
+        <button id="btnEditarPatron">Editar patrón</button>
+      </div>
+      <button id="btnReset" class="mt8 secondary">Restablecer valores por defecto</button>
+      <p class="muted mt8">Tip: guarda tu lunes base y semanas del ciclo; luego asigna el turno por semana. Puedes ocultar la configuración cuando termines.</p>
+    </div>
+  </main>
+
+  <script>
+    const Store = {
+      load(k, def){ try{ return JSON.parse(localStorage.getItem(k)) ?? def }catch{ return def } },
+      save(k, v){ localStorage.setItem(k, JSON.stringify(v)); }
+    };
+
+    const defaultShifts = [
+      { id:1, name:"Turno 1 - Mañana", schedule:"7:00 a.m. - 3:00 p.m." },
+      { id:2, name:"Turno 2 - Noche",  schedule:"11:00 p.m. - 7:00 a.m." },
+      { id:3, name:"Turno 3 - Tarde",  schedule:"3:00 p.m. - 11:00 p.m." },
+      { id:4, name:"Turno 4 - Interna",schedule:"8:00 a.m. - 5:00 p.m." }
+    ];
+
+    let settings = Store.load("settings", { startMonday: "2025-06-16", cycleWeeks: 4 });
+    let shifts   = Store.load("shifts", defaultShifts);
+    let pattern  = Store.load("pattern", [
+      { weekIndex:0, shiftId:3 },
+      { weekIndex:1, shiftId:4 },
+      { weekIndex:2, shiftId:1 },
+      { weekIndex:3, shiftId:2 },
+    ]);
+
+    const toMonday = (d)=> {
+      const dt = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+      const day = (dt.getDay()+6)%7;
+      dt.setDate(dt.getDate()-day);
+      return dt;
+    };
+    const fmt = (d)=> d.toLocaleDateString("es-MX", {day:"2-digit", month:"2-digit", year:"numeric"});
+
+    function getShiftForDate(targetDate){
+      const monday = toMonday(targetDate);
+      const start = toMonday(new Date(settings.startMonday));
+      const msWeek = 7*24*3600*1000;
+      const weeks = Math.floor((monday - start) / msWeek);
+      if (weeks < 0 || settings.cycleWeeks<=0 || pattern.length===0) return {shift:null, monday};
+      const idx = weeks % settings.cycleWeeks;
+      const a = pattern.find(p => p.weekIndex===idx);
+      const shift = shifts.find(s => s.id === (a?.shiftId ?? -1)) || null;
+      return {shift, monday};
+    }
+
+    const $fecha = document.getElementById("fecha");
+    const $btnConsultar = document.getElementById("btnConsultar");
+    const $lblFecha = document.getElementById("lblFecha");
+    const $lblSemana = document.getElementById("lblSemana");
+    const $lblTurno = document.getElementById("lblTurno");
+    const $lblHorario = document.getElementById("lblHorario");
+    const $lblNota = document.getElementById("lblNota");
+    const $btnToggleCfg = document.getElementById("btnToggleCfg");
+    const $configPanel = document.getElementById("configPanel");
+    const $btnConfigurar = document.getElementById("btnConfigurar");
+    const $btnEditarPatron = document.getElementById("btnEditarPatron");
+    const $btnReset = document.getElementById("btnReset");
+
+    function formatYYYYMMDD(d){ return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10); }
+    function setDateValue(input, date){ input.value = formatYYYYMMDD(date); }
+    function getDateValue(input){ return input.value ? new Date(input.value + "T12:00:00") : new Date(); }
+
+    setDateValue($fecha, new Date());
+
+    function mostrarResultado(fecha){
+      const {shift, monday} = getShiftForDate(fecha);
+      $lblFecha.textContent = `🗓 Fecha: ${fmt(fecha)}`;
+      $lblSemana.textContent = `📅 Semana iniciada el: ${fmt(monday)}`;
+      if (!shift){
+        $lblTurno.textContent = (fecha < new Date(settings.startMonday)) ? "⚠️ Fecha anterior al inicio del ciclo." : "⚠️ Patrón sin asignar para esta semana.";
+        $lblHorario.textContent=""; $lblNota.textContent="";
+        return;
+      }
+      $lblTurno.textContent = `✅ Te toca: ${shift.name}`;
+      $lblHorario.textContent = `🕒 Horario: ${shift.schedule}`;
+      $lblNota.textContent = "";
+    }
+
+    $btnConsultar.addEventListener("click", ()=> mostrarResultado(getDateValue($fecha)));
+
+    $btnToggleCfg.addEventListener("click", ()=>{
+      const show = $configPanel.style.display !== "grid";
+      $configPanel.style.display = show ? "grid" : "none";
+    });
+
+    $btnConfigurar.addEventListener("click", ()=>{
+      const base = prompt("Ingresa el lunes base (YYYY-MM-DD):", settings.startMonday);
+      if (!base) return;
+      const cycle = parseInt(prompt("Semanas del ciclo (1-52):", settings.cycleWeeks),10);
+      if (!cycle || cycle<1 || cycle>52){ alert("Valor inválido"); return; }
+      settings.startMonday = base;
+      settings.cycleWeeks = cycle;
+      Store.save("settings", settings);
+
+      if (pattern.length !== cycle){
+        pattern = Array.from({length:cycle}, (_,i)=>({ weekIndex:i, shiftId: shifts[Math.min(i, shifts.length-1)].id }));
+        Store.save("pattern", pattern);
+      }
+      alert(`Listo\nInicio: ${base}\nSemanas: ${cycle}`);
+      mostrarResultado(getDateValue($fecha));
+    });
+
+    $btnEditarPatron.addEventListener("click", ()=>{
+      if (settings.cycleWeeks<=0){ alert("Configura primero el ciclo"); return; }
+      const weekStr = prompt(`¿Qué semana editar? (1..${settings.cycleWeeks})`, "1");
+      const idx = parseInt(weekStr,10)-1;
+      if (isNaN(idx) || idx<0 || idx>=settings.cycleWeeks) return;
+
+      const opciones = shifts.map(s=>`${s.id}. ${s.name}`).join("\n");
+      const sel = prompt(`Semana ${idx+1}: selecciona turno\n${opciones}`, "1. Turno 1 - Mañana");
+      if (!sel) return;
+      const id = parseInt(sel.split(".")[0].trim(),10);
+      if (!Number.isInteger(id)) return;
+
+      const ex = pattern.find(p=>p.weekIndex===idx);
+      if (ex) ex.shiftId = id; else pattern.push({weekIndex:idx, shiftId:id});
+      pattern = pattern.filter(p=>p.weekIndex>=0 && p.weekIndex<settings.cycleWeeks).sort((a,b)=>a.weekIndex-b.weekIndex);
+      Store.save("pattern", pattern);
+
+      const name = shifts.find(s=>s.id===id)?.name ?? "(desconocido)";
+      alert(`Patrón actualizado\nSemana ${idx+1} → ${name}`);
+      mostrarResultado(getDateValue($fecha));
+    });
+
+    $btnReset.addEventListener("click", ()=>{
+      if (!confirm("¿Restablecer a valores por defecto?")) return;
+      settings = { startMonday:"2025-06-16", cycleWeeks:4 };
+      shifts = [
+        { id:1, name:"Turno 1 - Mañana", schedule:"7:00 a.m. - 3:00 p.m." },
+        { id:2, name:"Turno 2 - Noche",  schedule:"11:00 p.m. - 7:00 a.m." },
+        { id:3, name:"Turno 3 - Tarde",  schedule:"3:00 p.m. - 11:00 p.m." },
+        { id:4, name:"Turno 4 - Interna",schedule:"8:00 a.m. - 5:00 p.m." }
+      ];
+      pattern = [
+        { weekIndex:0, shiftId:3 },
+        { weekIndex:1, shiftId:4 },
+        { weekIndex:2, shiftId:1 },
+        { weekIndex:3, shiftId:2 },
+      ];
+      Store.save("settings", settings);
+      Store.save("shifts", shifts);
+      Store.save("pattern", pattern);
+      mostrarResultado(getDateValue($fecha));
+      alert("Hecho");
+    });
+
+    mostrarResultado(new Date());
+
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", ()=> navigator.serviceWorker.register("sw.js"));
+    }
+  </script>
+</body>
+</html>
