@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Rol de turnos</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#00338D" />
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Rol">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <style>
+    :root { --primary:#00338D; --border:#B0B0B0; }
+    *{ box-sizing:border-box; }
+    body{ margin:0; font-family:system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background:#fff; color:#111; }
+    header{ display:grid; grid-template-columns: 1fr auto; align-items:center; padding:12px 16px; border-bottom:1px solid #eee; }
+    header nav a{ margin-right:12px; text-decoration:none; color:#00338D; font-weight:600; }
+    header img{ height:28px; }
+    main{ max-width:900px; margin:0 auto; padding:16px; }
+    h1{ font-size:22px; margin:8px 0 16px; color:#111; font-weight:700; }
+    .row{ display:grid; grid-template-columns:1fr auto; gap:8px; align-items:center; }
+    button{ background:var(--primary); color:#fff; border:none; padding:10px 14px; border-radius:10px; font-weight:600; cursor:pointer; }
+    button.secondary{ background:#eee; color:#111; }
+    input[type="date"]{ padding:10px; border:1px solid #ccc; border-radius:8px; }
+    .grid{ display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap:12px; margin-top:12px; }
+    .card{ border:1px solid var(--border); border-radius:12px; padding:12px; }
+    .title{ font-weight:700; margin-bottom:4px; }
+    .muted{ opacity:.75; font-size:12px; }
+    #configPanel{ display:none; margin-top:12px; }
+    .cfg-row{ display:grid; grid-template-columns: 1fr 1fr; gap:8px; margin-bottom:8px; }
+    .cfg-row input{ padding:8px; border:1px solid #ccc; border-radius:8px; }
+    .mt16{ margin-top:16px; }
+  </style>
+</head>
+<body>
+  <header>
+    <nav>
+      <a href="index.html">Consulta personal</a>
+      <a href="rol.html">Rol de turnos</a>
+    </nav>
+    <img src="icons/cemex_logo.png" alt="CEMEX" />
+  </header>
+
+  <main>
+    <h1>Rol de turnos</h1>
+
+    <div class="row">
+      <input id="fecha" type="date">
+      <button id="btnConsultar">Consultar</button>
+    </div>
+
+    <div id="encabezado" class="mt16"></div>
+
+    <div class="grid" id="gridTurnos"></div>
+
+    <div class="mt16">
+      <button id="btnToggleCfg">⚙️ Configuración</button>
+      <div id="configPanel">
+        <div class="muted" style="margin:8px 0;">Personaliza nombres y horarios por turno. Se guardan en este dispositivo.</div>
+
+        <div class="cfg-row">
+          <input id="t1Nombre" placeholder="Turno 1 - nombre">
+          <input id="t1Horario" placeholder="Turno 1 - horario">
+        </div>
+        <div class="cfg-row">
+          <input id="t2Nombre" placeholder="Turno 2 - nombre">
+          <input id="t2Horario" placeholder="Turno 2 - horario">
+        </div>
+        <div class="cfg-row">
+          <input id="t3Nombre" placeholder="Turno 3 - nombre">
+          <input id="t3Horario" placeholder="Turno 3 - horario">
+        </div>
+        <div class="cfg-row">
+          <input id="t4Nombre" placeholder="Turno 4 - nombre">
+          <input id="t4Horario" placeholder="Turno 4 - horario">
+        </div>
+
+        <button id="btnGuardar" class="mt16">Guardar cambios</button>
+        <button id="btnReset" class="mt16 secondary">Restablecer por defecto</button>
+      </div>
+    </div>
+
+    <p class="muted mt16">Esta página muestra el <b>rol completo</b> (quién está en cada turno) para la fecha seleccionada. Los nombres rotan semana a semana desde el lunes base.</p>
+  </main>
+
+  <script>
+    function showError(msg){
+      let e = document.getElementById("errBox");
+      if(!e){
+        e = document.createElement("div");
+        e.id = "errBox";
+        e.style.cssText = "background:#ffecec;color:#a00;padding:10px;border-radius:8px;margin-top:10px;border:1px solid #f5c2c7;";
+        document.querySelector("main").prepend(e);
+      }
+      e.textContent = "⚠️ " + msg;
+    }
+
+    try {
+      const Store = {
+        load(k, def){ try{ return JSON.parse(localStorage.getItem(k)) ?? def }catch{ return def } },
+        save(k, v){ localStorage.setItem(k, JSON.stringify(v)); }
+      };
+
+      // Títulos + horarios fijos por turno
+      const turnosDef = [
+        { key:"t1", titulo:"Turno 1 - Mañana (Full)", horario:"7:00 a.m. - 3:00 p.m." },
+        { key:"t2", titulo:"Turno 2 - Noche",         horario:"11:00 p.m. - 7:00 a.m." },
+        { key:"t3", titulo:"Turno 3 - Tarde (Full)",  horario:"3:00 p.m. - 11:00 p.m." },
+        { key:"t4", titulo:"Turno 4 - Agregado",      horario:"8:00 a.m. - 5:00 p.m."  }
+      ];
+
+      // Semana base: T1 Marisol, T2 Gualberto, T3 Humberto, T4 Edgar
+      const defaultPeople = ["Marisol Caldera", "Gualberto Rodriguez", "Humberto Castillo", "Edgar Pérez"];
+      let customPeople = Store.load("rolPeople", defaultPeople.slice());
+
+      // Lunes base y semanas de ciclo (vienen de la otra página; si no existe, valor por defecto)
+      const settings = Store.load("settings", { startMonday: "2025-06-16", cycleWeeks: 4 });
+
+      // Utilidades de fecha (compat Safari)
+      function toMonday(d){
+        const dt = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+        const day = (dt.getDay()+6)%7; // lunes=0
+        dt.setDate(dt.getDate()-day);
+        return dt;
+      }
+      function fmt(d){ return d.toLocaleDateString("es-MX", {day:"2-digit", month:"2-digit", year:"numeric"}); }
+      function formatYYYYMMDD(d){ return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10); }
+      function setDateValue(input, date){ input.value = formatYYYYMMDD(date); }
+      function getDateValue(input){ return input.value ? new Date(input.value + "T12:00:00") : new Date(); }
+
+      // Rotación a la derecha
+      function rotateRight(arr, n){
+        const a = arr.slice();
+        const k = ((n % a.length) + a.length) % a.length;
+        if (k===0) return a;
+        return a.slice(-k).concat(a.slice(0, -k));
+      }
+      // Semanas transcurridas desde el lunes base
+      function weeksSinceBase(date){
+        const monday = toMonday(date);
+        const base = toMonday(new Date(settings.startMonday));
+        return Math.floor((monday - base)/(7*24*3600*1000));
+      }
+
+      // UI
+      const $fecha = document.getElementById("fecha");
+      const $btnConsultar = document.getElementById("btnConsultar");
+      const $encabezado = document.getElementById("encabezado");
+      const $grid = document.getElementById("gridTurnos");
+      const $btnCfg = document.getElementById("btnToggleCfg");
+      const $cfg = document.getElementById("configPanel");
+      const $t1Nombre = document.getElementById("t1Nombre");
+      const $t1Horario= document.getElementById("t1Horario");
+      const $t2Nombre = document.getElementById("t2Nombre");
+      const $t2Horario= document.getElementById("t2Horario");
+      const $t3Nombre = document.getElementById("t3Nombre");
+      const $t3Horario= document.getElementById("t3Horario");
+      const $t4Nombre = document.getElementById("t4Nombre");
+      const $t4Horario= document.getElementById("t4Horario");
+      const $btnGuardar= document.getElementById("btnGuardar");
+      const $btnReset  = document.getElementById("btnReset");
+
+      setDateValue($fecha, new Date());
+
+      function render(fecha){
+        $encabezado.textContent = "🗓 Fecha: " + fmt(fecha);
+        const w = weeksSinceBase(fecha);
+        const rotated = rotateRight(customPeople, w);
+
+        $grid.innerHTML = "";
+        for (let i=0; i<4; i++){
+          const t = turnosDef[i];
+          const persona = rotated[i];
+          const el = document.createElement("div");
+          el.className = "card";
+          el.innerHTML = `
+            <div class="title">${t.titulo}</div>
+            <div><strong>Horario:</strong> ${t.horario}</div>
+            <div><strong>Nombre:</strong> ${persona}</div>
+          `;
+          $grid.appendChild(el);
+        }
+      }
+
+      $btnConsultar.addEventListener("click", ()=> render(getDateValue($fecha)));
+
+      $btnCfg.addEventListener("click", ()=>{
+        const show = $cfg.style.display !== "block";
+        $cfg.style.display = show ? "block" : "none";
+        if (show){
+          $t1Nombre.value = customPeople[0]; $t1Horario.value = turnosDef[0].horario;
+          $t2Nombre.value = customPeople[1]; $t2Horario.value = turnosDef[1].horario;
+          $t3Nombre.value = customPeople[2]; $t3Horario.value = turnosDef[2].horario;
+          $t4Nombre.value = customPeople[3]; $t4Horario.value = turnosDef[3].horario;
+        }
+      });
+
+      $btnGuardar.addEventListener("click", ()=>{
+        customPeople[0] = $t1Nombre.value || customPeople[0];
+        customPeople[1] = $t2Nombre.value || customPeople[1];
+        customPeople[2] = $t3Nombre.value || customPeople[2];
+        customPeople[3] = $t4Nombre.value || customPeople[3];
+        Store.save("rolPeople", customPeople);
+
+        if ($t1Horario.value) turnosDef[0].horario = $t1Horario.value;
+        if ($t2Horario.value) turnosDef[1].horario = $t2Horario.value;
+        if ($t3Horario.value) turnosDef[2].horario = $t3Horario.value;
+        if ($t4Horario.value) turnosDef[3].horario = $t4Horario.value;
+
+        alert("Cambios guardados ✅");
+        render(getDateValue($fecha));
+      });
+
+      $btnReset.addEventListener("click", ()=>{
+        if (!confirm("¿Restablecer nombres y horarios por defecto?")) return;
+        customPeople = defaultPeople.slice();
+        turnosDef[0].horario="7:00 a.m. - 3:00 p.m.";
+        turnosDef[1].horario="11:00 p.m. - 7:00 a.m.";
+        turnosDef[2].horario="3:00 p.m. - 11:00 p.m.";
+        turnosDef[3].horario="8:00 a.m. - 5:00 p.m.";
+        Store.save("rolPeople", customPeople);
+        render(getDateValue($fecha));
+        alert("Listo");
+      });
+
+      render(new Date());
+      window.addEventListener("error", (e)=> showError(e.message));
+    } catch(err){
+      showError(err.message || String(err));
+    }
+  </script>
+</body>
+</html>
