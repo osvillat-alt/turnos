@@ -15,147 +15,112 @@
 
   // ===================== Config compartida =====================
   let settings = Store.load("settingsSimple", {
-    startMonday: "2025-10-20", // LUNES base
-    baseShift: 1,              // turno activo esa semana (1..4)
+    startMonday: "20/10/2025", // ahora en formato DD/MM/YYYY
+    baseShift: 1,
     cycleWeeks: 4
   });
 
-  // ===================== Utilidades de fecha (a prueba de DST) =====================
-  // Acepta "YYYY-MM-DD" o "YYYY/MM/DD"
-  function parseYmd(s){
+  // ===================== Utilidades =====================
+  function parseDMY(s){
     if (!s) return null;
-    const [y,m,d] = s.trim().replace(/\//g,"-").split("-").map(n=>parseInt(n,10));
+    const [d,m,y] = s.trim().split(/[\/\-]/).map(n=>parseInt(n,10));
     if (!y || !m || !d) return null;
-    return new Date(y, m-1, d); // local
+    return new Date(y, m-1, d);
   }
-  // Fecha solo-UTC (medianoche UTC)
-  function asUTCDate(d){ return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())); }
-  // Índice de día UTC desde epoch
-  function dayIndexUTC(d){ return Math.floor(asUTCDate(d).getTime() / 86400000); }
-  // Índice de lunes (UTC) para la semana de 'd'
-  function mondayIndexUTC(d){
-    const u = asUTCDate(d);
-    const dow = (u.getUTCDay()+6)%7; // lunes=0
-    return dayIndexUTC(d) - dow;
+  function formatDMY(d){
+    return d.toLocaleDateString("es-MX",{day:"2-digit",month:"2-digit",year:"numeric"});
   }
-  // Lunes local para mostrar (desde índice de lunes UTC)
-  function mondayLocalFromIndex(idx){ return new Date(idx*86400000); }
 
-  // Diferencia de semanas en enteros (UTC, sin DST)
+  function toMonday(d){
+    const dt = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const day = (dt.getDay()+6)%7;
+    dt.setDate(dt.getDate()-day);
+    return dt;
+  }
+
   function weeksSinceBase(date){
-    const wDate = mondayIndexUTC(date);
-    const wBase = mondayIndexUTC(parseYmd(settings.startMonday));
-    return wDate - wBase; // entero
+    const monday = toMonday(date);
+    const base = toMonday(parseDMY(settings.startMonday));
+    const diffDays = Math.floor((asUTCDate(monday) - asUTCDate(base)) / (7*24*3600*1000));
+    return diffDays;
   }
 
-  // YYYY-MM-DD en zona local (para inputs)
-  function formatYYYYMMDD(d){
-    return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10);
-  }
-  function setDateValue(input, date){ input.value = formatYYYYMMDD(date); }
+  function asUTCDate(d){ return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())); }
+
+  function formatYYYYMMDD(d){ return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10); }
   function getDateValue(input){ return input.value ? new Date(input.value + "T12:00:00") : new Date(); }
-  const fmt = (d)=> d.toLocaleDateString("es-MX",{day:"2-digit",month:"2-digit",year:"numeric"});
 
-  // ===================== Cálculo del turno =====================
+  // ===================== Cálculo =====================
   function getShiftForDate(targetDate){
+    const monday = toMonday(targetDate);
     const w = weeksSinceBase(targetDate);
-    const n = ((settings.baseShift - 1 + w) % 4 + 4) % 4; // 0..3
+    const n = ((settings.baseShift - 1 + w) % 4 + 4) % 4;
     const shiftId = n + 1;
     const shift = shifts.find(s => s.id === shiftId);
-    const mondayLocal = mondayLocalFromIndex(mondayIndexUTC(targetDate));
-    return { shift, monday: mondayLocal };
+    return { shift, monday };
   }
 
-  // ===================== UI refs =====================
-  const $fecha        = document.getElementById("fecha");
+  // ===================== UI =====================
+  const $fecha = document.getElementById("fecha");
   const $btnConsultar = document.getElementById("btnConsultar");
-  const $lblFecha     = document.getElementById("lblFecha");
-  const $lblSemana    = document.getElementById("lblSemana");
-  const $lblTurno     = document.getElementById("lblTurno");
-  const $lblHorario   = document.getElementById("lblHorario");
-  const $lblNota      = document.getElementById("lblNota");
+  const $lblFecha = document.getElementById("lblFecha");
+  const $lblSemana = document.getElementById("lblSemana");
+  const $lblTurno = document.getElementById("lblTurno");
+  const $lblHorario = document.getElementById("lblHorario");
+  const $lblNota = document.getElementById("lblNota");
   const $btnToggleCfg = document.getElementById("btnToggleCfg");
-  const $configPanel  = document.getElementById("configPanel");
-  const $btnConfigurar= document.getElementById("btnConfigurar");
-  const $btnReset     = document.getElementById("btnReset");
+  const $configPanel = document.getElementById("configPanel");
+  const $btnConfigurar = document.getElementById("btnConfigurar");
+  const $btnReset = document.getElementById("btnReset");
 
-  setDateValue($fecha, new Date());
+  $fecha.value = formatYYYYMMDD(new Date());
 
   function mostrarResultado(fecha){
     const {shift, monday} = getShiftForDate(fecha);
-    $lblFecha.textContent   = `🗓 Fecha: ${fmt(fecha)}`;
-    $lblSemana.textContent  = `📅 Semana iniciada el: ${fmt(monday)}`;
-    $lblTurno.textContent   = `Te toca: ${shift.name}`;
+    $lblFecha.textContent = `🗓 Fecha: ${formatDMY(fecha)}`;
+    $lblSemana.textContent = `📅 Semana iniciada el: ${formatDMY(monday)}`;
+    $lblTurno.textContent = `Te toca: ${shift.name}`;
     $lblHorario.textContent = `🕒 Horario: ${shift.schedule}`;
-    $lblNota.textContent    = "";
   }
 
-  // ===================== Eventos =====================
   $btnConsultar.addEventListener("click", ()=> mostrarResultado(getDateValue($fecha)));
 
   $btnToggleCfg.addEventListener("click", ()=>{
-    const show = $configPanel.style.display !== "block";
-    $configPanel.style.display = show ? "block" : "none";
+    $configPanel.style.display = $configPanel.style.display === "block" ? "none" : "block";
   });
 
-  // Configurar ciclo (SOLO lunes base + turno actual)
   $btnConfigurar.addEventListener("click", ()=>{
-    const baseRaw = prompt("Ingresa el LUNES base (YYYY-MM-DD):", settings.startMonday || "2025-10-20");
+    const baseRaw = prompt("Ingresa el LUNES base (DD/MM/YYYY):", settings.startMonday || "20/10/2025");
     if (!baseRaw) return;
+    const baseDate = parseDMY(baseRaw);
+    if (!baseDate) { alert("Formato inválido. Usa DD/MM/YYYY."); return; }
+    const baseMonday = toMonday(baseDate);
+    const baseStr = formatDMY(baseMonday);
 
-    const baseDt = parseYmd(baseRaw);
-    if (!baseDt || isNaN(baseDt)) { alert("Fecha inválida. Usa formato YYYY-MM-DD."); return; }
-
-    // Normaliza al LUNES exacto de esa semana
-    const baseMondayIdx = mondayIndexUTC(baseDt);
-    const baseMonday    = mondayLocalFromIndex(baseMondayIdx);
-    const baseStr       = formatYYYYMMDD(baseMonday);
-
-    const turnoBaseStr = prompt(
-      "¿En qué turno estás actualmente (en la semana del LUNES base)? (1..4)\n" +
-      "1. Turno 1 – Mañana\n" +
-      "2. Turno 2 – Noche\n" +
-      "3. Turno 3 – Tarde\n" +
-      "4. Turno 4 – Interna",
-      String(settings.baseShift || 1)
+    const turnoStr = prompt(
+      "¿En qué turno estás actualmente (1..4)?\n1. Turno 1 – Mañana\n2. Turno 2 – Noche\n3. Turno 3 – Tarde\n4. Turno 4 – Interna",
+      settings.baseShift || 1
     );
-    const turnoBase = parseInt(turnoBaseStr, 10);
-    if (![1,2,3,4].includes(turnoBase)) { alert("Valor de turno inválido."); return; }
+    const turno = parseInt(turnoStr);
+    if (![1,2,3,4].includes(turno)) { alert("Valor inválido."); return; }
 
-    settings.startMonday = baseStr;   // guardamos el LUNES exacto (formato input)
-    settings.baseShift   = turnoBase; // turno activo esa semana
-    settings.cycleWeeks  = 4;
+    settings.startMonday = baseStr;
+    settings.baseShift = turno;
     Store.save("settingsSimple", settings);
-
-    alert(
-      "Configuración guardada ✅\n\n" +
-      `Lunes base: ${settings.startMonday}\n` +
-      `Turno actual (semana base): ${turnoBase}\n` +
-      `Ciclo: 4 semanas`
-    );
-
+    alert(`Configuración guardada ✅\n\nLunes base: ${baseStr}\nTurno actual: ${turno}`);
     mostrarResultado(getDateValue($fecha));
   });
 
   $btnReset.addEventListener("click", ()=>{
-    if (!confirm("¿Restablecer a valores por defecto?")) return;
-    settings = { startMonday:"2025-10-20", baseShift:1, cycleWeeks:4 };
+    if (!confirm("¿Restablecer configuración?")) return;
+    settings = { startMonday:"20/10/2025", baseShift:1, cycleWeeks:4 };
     Store.save("settingsSimple", settings);
     mostrarResultado(getDateValue($fecha));
     alert("Hecho");
   });
 
-  // Primer render
   mostrarResultado(new Date());
 
-  // Por si queda algún "Editar patrón" cacheado:
-  document.getElementById('btnEditarPatron')?.remove();
-  [...document.querySelectorAll('button')].forEach(b=>{
-    const t=(b.textContent||"").trim().toLowerCase();
-    if (t==="editar patrón" || t==="editar patron") b.remove();
-  });
-
-  // Service Worker
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", ()=> navigator.serviceWorker.register("sw.js"));
   }
