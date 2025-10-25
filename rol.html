@@ -26,10 +26,6 @@
     .card{ border:1px solid var(--border); border-radius:12px; padding:12px; }
     .title{ font-weight:700; margin-bottom:4px; }
     .muted{ opacity:.75; font-size:12px; }
-    #configPanel{ display:none; margin-top:12px; }
-    .cfg-row{ display:grid; grid-template-columns: 1fr 1fr; gap:8px; margin-bottom:8px; }
-    .cfg-row input{ padding:8px; border:1px solid #ccc; border-radius:8px; }
-    .mt16{ margin-top:16px; }
   </style>
 </head>
 <body>
@@ -49,85 +45,60 @@
       <button id="btnConsultar">Consultar</button>
     </div>
 
-    <div id="encabezado" class="mt16"></div>
+    <div id="encabezado" class="muted" style="margin-top:12px;"></div>
 
     <div class="grid" id="gridTurnos"></div>
 
-    <div class="mt16">
-      <button id="btnToggleCfg">⚙️ Configuración</button>
-      <div id="configPanel">
-        <div class="muted" style="margin:8px 0;">
-          Define los <b>nombres base</b> (semana del lunes base). Luego rotan automáticamente semana a semana.
-        </div>
-
-        <div class="cfg-row">
-          <input id="t1Nombre" placeholder="Turno 1 - nombre">
-          <input id="t1Horario" placeholder="Turno 1 - horario">
-        </div>
-        <div class="cfg-row">
-          <input id="t2Nombre" placeholder="Turno 2 - nombre">
-          <input id="t2Horario" placeholder="Turno 2 - horario">
-        </div>
-        <div class="cfg-row">
-          <input id="t3Nombre" placeholder="Turno 3 - nombre">
-          <input id="t3Horario" placeholder="Turno 3 - horario">
-        </div>
-        <div class="cfg-row">
-          <input id="t4Nombre" placeholder="Turno 4 - nombre">
-          <input id="t4Horario" placeholder="Turno 4 - horario">
-        </div>
-
-        <button id="btnGuardar" class="mt16">Guardar cambios</button>
-        <button id="btnReset" class="mt16" style="background:#eee;color:#111;">Restablecer por defecto</button>
-      </div>
-    </div>
-
-    <p class="muted mt16">
-      Semana base = semana del <b>lunes base</b> configurado en “Consulta personal”.
-      Si tu lunes base es 2025-10-20 y esa semana es <b>Marisol=Turno 1</b>, deja Marisol en T1 aquí.
+    <p class="muted" style="margin-top:16px;">
+      Semana base: <b>20/10/2025</b>. El rol rota cada semana (de lunes a domingo).
     </p>
   </main>
 
   <script>
-    // Helpers de persistencia
-    const Store = {
-      load(k, def){ try{ return JSON.parse(localStorage.getItem(k)) ?? def }catch{ return def } },
-      save(k, v){ localStorage.setItem(k, JSON.stringify(v)); }
-    };
+    // ===================== DATOS FIJOS =====================
+    // Semana base (dd/mm/yyyy)
+    const BASE_MONDAY_DMY = "20/10/2025";
 
-    // Leer el mismo lunes base que usa index.html (settingsSimple)
-    const settings = Store.load("settingsSimple", { startMonday:"2025-10-20", baseShift:1, cycleWeeks:4 });
-
-    // Definición de tarjetas (títulos + horarios)
-    const turnosDef = [
-      { key:"t1", titulo:"Turno 1 - Mañana (Full)", horario:"7:00 a.m. - 3:00 p.m." },
-      { key:"t2", titulo:"Turno 2 - Noche",         horario:"11:00 p.m. - 7:00 a.m." },
-      { key:"t3", titulo:"Turno 3 - Tarde (Full)",  horario:"3:00 p.m. - 11:00 p.m." },
-      { key:"t4", titulo:"Turno 4 - Interna",       horario:"8:00 a.m. - 5:00 p.m."  }
+    // Títulos/horarios fijos por turno
+    const TURNOS = [
+      { titulo:"Turno 1 - Mañana (Full)", horario:"7:00 a.m. - 3:00 p.m." },
+      { titulo:"Turno 2 - Noche",         horario:"11:00 p.m. - 7:00 a.m." },
+      { titulo:"Turno 3 - Tarde (Full)",  horario:"3:00 p.m. - 11:00 p.m." },
+      { titulo:"Turno 4 - Agregado",      horario:"8:00 a.m. - 5:00 p.m." }
     ];
 
-    // Nombres "base" (semana del lunes base): T1, T2, T3, T4 respectivamente
-    const defaultPeople = ["Marisol Caldera", "Gualberto Rodriguez", "Humberto Castillo", "Edgar Pérez"];
-    let customPeople = Store.load("rolPeople", defaultPeople.slice());
+    // Personas base para la semana del 20/10/2025
+    // [T1, T2, T3, T4]
+    const PEOPLE_BASE = [
+      "Marisol Caldera",
+      "Gualberto Rodriguez",
+      "Humberto Castillo",
+      "Edgar Pérez"
+    ];
 
-    // Utilidades de fecha (compat Safari)
-    function toMonday(d){
-      const dt = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-      const day = (dt.getDay()+6)%7; // lunes=0
-      dt.setDate(dt.getDate()-day);
-      return dt;
+    // ===================== UTILIDADES FECHA =====================
+    function parseDMY(s){
+      if (!s) return null;
+      const [d,m,y] = s.trim().split(/[\/\-]/).map(n=>parseInt(n,10));
+      if (!y || !m || !d) return null;
+      return new Date(y, m-1, d); // local
     }
-    function fmt(d){ return d.toLocaleDateString("es-MX", {day:"2-digit", month:"2-digit", year:"numeric"}); }
-    function formatYYYYMMDD(d){ return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10); }
-    function setDateValue(input, date){ input.value = formatYYYYMMDD(date); }
-    function getDateValue(input){ return input.value ? new Date(input.value + "T12:00:00") : new Date(); }
-
-    function weeksSinceBase(date){
-      const monday = toMonday(date);
-      const base = toMonday(new Date(settings.startMonday));
-      return Math.floor((monday - base)/(7*24*3600*1000));
+    function formatDMY(d){
+      return d.toLocaleDateString("es-MX",{day:"2-digit",month:"2-digit",year:"numeric"});
     }
 
+    // Convertimos a "medianoche UTC" para evitar DST
+    function asUTCDate(d){ return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())); }
+    function dayIndexUTC(d){ return Math.floor(asUTCDate(d).getTime() / 86400000); }
+    // Índice de lunes (UTC) de la semana de 'd'
+    function mondayIndexUTC(d){
+      const u = asUTCDate(d);
+      const dow = (u.getUTCDay()+6)%7; // lunes=0
+      return dayIndexUTC(d) - dow;
+    }
+    function mondayLocalFromIndex(idx){ return new Date(idx*86400000); }
+
+    // ===================== ROTACIÓN =====================
     function rotateRight(arr, n){
       const a = arr.slice();
       const k = ((n % a.length) + a.length) % a.length;
@@ -135,96 +106,58 @@
       return a.slice(-k).concat(a.slice(0, -k));
     }
 
-    // UI refs
-    const $fecha = document.getElementById("fecha");
-    const $btnConsultar = document.getElementById("btnConsultar");
-    const $encabezado = document.getElementById("encabezado");
-    const $grid = document.getElementById("gridTurnos");
-    const $btnCfg = document.getElementById("btnToggleCfg");
-    const $cfg = document.getElementById("configPanel");
-    const $t1Nombre = document.getElementById("t1Nombre");
-    const $t1Horario= document.getElementById("t1Horario");
-    const $t2Nombre = document.getElementById("t2Nombre");
-    const $t2Horario= document.getElementById("t2Horario");
-    const $t3Nombre = document.getElementById("t3Nombre");
-    const $t3Horario= document.getElementById("t3Horario");
-    const $t4Nombre = document.getElementById("t4Nombre");
-    const $t4Horario= document.getElementById("t4Horario");
-    const $btnGuardar= document.getElementById("btnGuardar");
-    const $btnReset  = document.getElementById("btnReset");
+    // Semanas transcurridas desde la base (entero, usando UTC)
+    const BASE_IDX = mondayIndexUTC(parseDMY(BASE_MONDAY_DMY));
+    function weeksSinceBase(date){
+      const idx = mondayIndexUTC(date);
+      return idx - BASE_IDX; // 0 = misma semana base
+    }
 
-    setDateValue($fecha, new Date());
+    // ===================== UI =====================
+    const $fecha = document.getElementById("fecha");
+    const $btn = document.getElementById("btnConsultar");
+    const $enc = document.getElementById("encabezado");
+    const $grid = document.getElementById("gridTurnos");
+
+    // Set hoy en input date (formato ISO local para <input type="date">)
+    function formatYYYYMMDD(d){ return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10); }
+    $fecha.value = formatYYYYMMDD(new Date());
 
     function render(fecha){
-      $encabezado.textContent = "🗓 Fecha: " + fmt(fecha);
-      const w = weeksSinceBase(fecha);   // <-- usa settingsSimple.startMonday
-      const rotated = rotateRight(customPeople, w);
+      const w = weeksSinceBase(fecha);
+      const mondayIdx = mondayIndexUTC(fecha);
+      const mondayLocal = mondayLocalFromIndex(mondayIdx);
 
+      // Rota personas w semanas a la derecha
+      const peopleRotated = rotateRight(PEOPLE_BASE, w);
+
+      $enc.textContent = `🗓 Fecha: ${formatDMY(fecha)} — 📅 Semana iniciada el: ${formatDMY(mondayLocal)}`;
+
+      // Cuadros
       $grid.innerHTML = "";
-      const horarios = [
-        $t1Horario.value || turnosDef[0].horario,
-        $t2Horario.value || turnosDef[1].horario,
-        $t3Horario.value || turnosDef[2].horario,
-        $t4Horario.value || turnosDef[3].horario
-      ];
-
       for (let i=0; i<4; i++){
-        const t = turnosDef[i];
-        const persona = rotated[i];
-        const el = document.createElement("div");
-        el.className = "card";
-        el.innerHTML = `
+        const t = TURNOS[i];
+        const persona = peopleRotated[i];
+        const card = document.createElement("div");
+        card.className = "card";
+        card.innerHTML = `
           <div class="title">${t.titulo}</div>
-          <div><strong>Horario:</strong> ${horarios[i]}</div>
+          <div><strong>Horario:</strong> ${t.horario}</div>
           <div><strong>Nombre:</strong> ${persona}</div>
         `;
-        $grid.appendChild(el);
+        $grid.appendChild(card);
       }
     }
 
-    $btnConsultar.addEventListener("click", ()=> render(getDateValue($fecha)));
-
-    $btnCfg.addEventListener("click", ()=>{
-      const show = $cfg.style.display !== "block";
-      $cfg.style.display = show ? "block" : "none";
-      if (show){
-        $t1Nombre.value = customPeople[0]; $t1Horario.value = turnosDef[0].horario;
-        $t2Nombre.value = customPeople[1]; $t2Horario.value = turnosDef[1].horario;
-        $t3Nombre.value = customPeople[2]; $t3Horario.value = turnosDef[2].horario;
-        $t4Nombre.value = customPeople[3]; $t4Horario.value = turnosDef[3].horario;
-      }
+    $btn.addEventListener("click", ()=>{
+      const d = $fecha.value ? new Date($fecha.value + "T12:00:00") : new Date();
+      render(d);
     });
 
-    $btnGuardar.addEventListener("click", ()=>{
-      customPeople[0] = $t1Nombre.value || customPeople[0];
-      customPeople[1] = $t2Nombre.value || customPeople[1];
-      customPeople[2] = $t3Nombre.value || customPeople[2];
-      customPeople[3] = $t4Nombre.value || customPeople[3];
-      Store.save("rolPeople", customPeople);
-
-      if ($t1Horario.value) turnosDef[0].horario = $t1Horario.value;
-      if ($t2Horario.value) turnosDef[1].horario = $t2Horario.value;
-      if ($t3Horario.value) turnosDef[2].horario = $t3Horario.value;
-      if ($t4Horario.value) turnosDef[3].horario = $t4Horario.value;
-
-      alert("Cambios guardados ✅");
-      render(getDateValue($fecha));
-    });
-
-    $btnReset.addEventListener("click", ()=>{
-      if (!confirm("¿Restablecer nombres y horarios por defecto?")) return;
-      customPeople = defaultPeople.slice();
-      turnosDef[0].horario="7:00 a.m. - 3:00 p.m.";
-      turnosDef[1].horario="11:00 p.m. - 7:00 a.m.";
-      turnosDef[2].horario="3:00 p.m. - 11:00 p.m.";
-      turnosDef[3].horario="8:00 a.m. - 5:00 p.m.";
-      Store.save("rolPeople", customPeople);
-      render(getDateValue($fecha));
-      alert("Listo");
-    });
-
+    // primer render (hoy)
     render(new Date());
 
+    // PWA SW
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", ()=> navigator.serviceWorker.register("sw.js"));
     }
