@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>Rol de turnos</title>
+  <title>Turnos</title>
   <style>
     :root { --primary:#00338D; --border:#B0B0B0; }
     *{ box-sizing:border-box; }
@@ -11,19 +11,16 @@
     header{ display:grid; grid-template-columns: 1fr auto; align-items:center; padding:12px 16px; border-bottom:1px solid #eee; }
     header nav a{ margin-right:12px; text-decoration:none; color:#00338D; font-weight:600; }
     header img{ height:28px; }
-    main{ max-width:900px; margin:0 auto; padding:16px; }
+    main{ max-width:800px; margin:0 auto; padding:16px; }
     h1{ font-size:22px; margin:8px 0 16px; font-weight:700; }
     .row{ display:grid; grid-template-columns:1fr auto; gap:8px; align-items:center; }
     button{ background:var(--primary); color:#fff; border:none; padding:10px 14px; border-radius:10px; font-weight:600; cursor:pointer; }
+    button.secondary{ background:#eee; color:#111; }
     input[type="date"]{ padding:10px; border:1px solid #ccc; border-radius:8px; }
-    .grid{ display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap:12px; margin-top:12px; }
     .card{ border:1px solid var(--border); border-radius:12px; padding:12px; }
-    .title{ font-weight:700; margin-bottom:4px; }
     .muted{ opacity:.75; font-size:12px; }
-    #configPanel{ display:none; margin-top:12px; }
-    .cfg-row{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:8px; }
-    .cfg-row input{ padding:8px; border:1px solid #ccc; border-radius:8px; }
-    .mt8{ margin-top:8px; }
+    #configPanel{ display:none; }
+    .mt8{ margin-top:8px; } .mt12{ margin-top:12px; } .mt16{ margin-top:16px; }
   </style>
 </head>
 <body>
@@ -36,169 +33,155 @@
   </header>
 
   <main>
-    <h1>Rol de turnos</h1>
+    <h1>Consulta tu turno</h1>
 
     <div class="row">
       <input id="fecha" type="date">
       <button id="btnConsultar">Consultar</button>
     </div>
 
-    <div id="encabezado" class="muted mt8"></div>
-
-    <div class="grid" id="gridTurnos"></div>
-
-    <div class="mt8">
-      <button id="btnToggleCfg">⚙️ Configuración</button>
-      <div id="configPanel">
-        <div class="muted">Nombres y horarios de la <b>semana base</b>. Rotan semanalmente (lunes→domingo).</div>
-        <div class="cfg-row">
-          <input id="t1Nombre" placeholder="Turno 1 - nombre">
-          <input id="t1Horario" placeholder="Turno 1 - horario">
-        </div>
-        <div class="cfg-row">
-          <input id="t2Nombre" placeholder="Turno 2 - nombre">
-          <input id="t2Horario" placeholder="Turno 2 - horario">
-        </div>
-        <div class="cfg-row">
-          <input id="t3Nombre" placeholder="Turno 3 - nombre">
-          <input id="t3Horario" placeholder="Turno 3 - horario">
-        </div>
-        <div class="cfg-row">
-          <input id="t4Nombre" placeholder="Turno 4 - nombre">
-          <input id="t4Horario" placeholder="Turno 4 - horario">
-        </div>
-        <button id="btnGuardar">Guardar</button>
-        <button id="btnReset" class="secondary" style="margin-left:8px;">Restablecer</button>
-      </div>
+    <div class="card mt12">
+      <div id="lblFecha"   style="font-weight:700;"></div>
+      <div id="lblSemana"></div>
+      <div id="lblTurno"   style="font-weight:700;"></div>
+      <div id="lblHorario"></div>
+      <div id="lblNota"></div>
     </div>
 
-    <p class="muted mt8">Base: T1=Marisol, T2=Gualberto, T3=Humberto, T4=Edgar. Semana base = la del lunes configurado en “Consulta personal”.</p>
+    <div class="mt16">
+      <button id="btnToggleCfg">⚙️ Configuración</button>
+      <div id="configPanel" class="mt12">
+        <button id="btnConfigurar">Configurar ciclo</button>
+      </div>
+      <button id="btnReset" class="mt8 secondary">Restablecer valores por defecto</button>
+      <p class="muted mt8">Configura el <b>lunes base</b> y el <b>turno actual (1..4)</b>. El ciclo es de 4 semanas (lunes→domingo).</p>
+    </div>
   </main>
 
   <script>
     // ===== Persistencia
     const Store = { load(k,d){ try{return JSON.parse(localStorage.getItem(k))??d}catch{return d} }, save(k,v){ localStorage.setItem(k,JSON.stringify(v)) } };
 
-    // ===== Leer settings compartidos
+    // ===== Turnos fijos
+    const shifts = [
+      { id:1, name:"Turno 1 - Mañana",  schedule:"7:00 a.m. - 3:00 p.m." },
+      { id:2, name:"Turno 2 - Noche",   schedule:"11:00 p.m. - 7:00 a.m." },
+      { id:3, name:"Turno 3 - Tarde",   schedule:"3:00 p.m. - 11:00 p.m." },
+      { id:4, name:"Turno 4 - Interna", schedule:"8:00 a.m. - 5:00 p.m." }
+    ];
+
+    // ===== Config compartida
     let settings = Store.load("settingsSimple", {
+      // Guardamos ISO (YYYY-MM-DD) del LUNES exacto para evitar ambigüedad
       startMondayISO: "2025-10-20",
       baseShift: 1,
       cycleWeeks: 4
     });
 
-    // ===== Datos base (puedes editarlos en el panel)
-    const turnosDef = [
-      { titulo:"Turno 1 - Mañana (Full)", horario:"7:00 a.m. - 3:00 p.m." },
-      { titulo:"Turno 2 - Noche",         horario:"11:00 p.m. - 7:00 a.m." },
-      { titulo:"Turno 3 - Tarde (Full)",  horario:"3:00 p.m. - 11:00 p.m." },
-      { titulo:"Turno 4 - Agregado",      horario:"8:00 a.m. - 5:00 p.m." }
-    ];
-    const defaultPeople = ["Marisol Caldera", "Gualberto Rodriguez", "Humberto Castillo", "Edgar Pérez"];
-    let customPeople = Store.load("rolPeople", defaultPeople.slice());
-
-    // ===== Fechas / DST-safe
-    const isoForInput = d => new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10);
+    // ===== Utilidades de fecha (robustas / DST-safe)
     const fmtDMY = d => d.toLocaleDateString("es-MX",{day:"2-digit",month:"2-digit",year:"numeric"});
+    const isoForInput = d => new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10);
+
+    // Acepta YYYY-MM-DD o DD/MM/YYYY y devuelve Date local
     function parseFlexible(s){
       if(!s) return null;
       s = s.trim();
-      if (/^\d{4}-\d{2}-\d{2}$/.test(s)) { const [y,m,d]=s.split("-").map(n=>parseInt(n,10)); return new Date(y,m-1,d); }
-      const parts = s.replace(/-/g,"/").split("/"); if(parts.length===3){ const [d,m,y]=parts.map(n=>parseInt(n,10)); if(y&&m&&d) return new Date(y,m-1,d); }
+      if (/^\d{4}-\d{2}-\d{2}$/.test(s)) { // ISO
+        const [y,m,d]=s.split("-").map(n=>parseInt(n,10)); return new Date(y,m-1,d);
+      }
+      const parts = s.replace(/-/g,"/").split("/"); // D/M/Y
+      if (parts.length===3){
+        const [d,m,y] = parts.map(n=>parseInt(n,10));
+        if (y && m && d) return new Date(y,m-1,d);
+      }
       return null;
     }
+
+    // Helpers UTC para contar semanas sin errores de DST
     const asUTC = d => new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
     const dayIndexUTC = d => Math.floor(asUTC(d).getTime()/86400000);
     const mondayIndexUTC = d => { const u=asUTC(d); const dow=(u.getUTCDay()+6)%7; return dayIndexUTC(d)-dow; };
     const mondayLocalFromIndex = idx => new Date(idx*86400000);
-    const rotateRight = (arr,n)=>{ const a=arr.slice(); const k=((n%a.length)+a.length)%a.length; return k? a.slice(-k).concat(a.slice(0,-k)) : a; };
 
     function weeksSinceBase(date){
       const wDate = mondayIndexUTC(date);
       const wBase = mondayIndexUTC(parseFlexible(settings.startMondayISO));
-      return wDate - wBase;
+      return wDate - wBase; // entero
     }
 
-    // ===== UI refs
-    const $fecha=document.getElementById("fecha"), $btn=document.getElementById("btnConsultar");
-    const $enc=document.getElementById("encabezado"), $grid=document.getElementById("gridTurnos");
-    const $btnToggleCfg=document.getElementById("btnToggleCfg"), $cfg=document.getElementById("configPanel");
-    const $t1Nombre=document.getElementById("t1Nombre"), $t1Horario=document.getElementById("t1Horario");
-    const $t2Nombre=document.getElementById("t2Nombre"), $t2Horario=document.getElementById("t2Horario");
-    const $t3Nombre=document.getElementById("t3Nombre"), $t3Horario=document.getElementById("t3Horario");
-    const $t4Nombre=document.getElementById("t4Nombre"), $t4Horario=document.getElementById("t4Horario");
-    const $btnGuardar=document.getElementById("btnGuardar"), $btnReset=document.getElementById("btnReset");
+    function getShiftForDate(targetDate){
+      const w = weeksSinceBase(targetDate);
+      const n = ((settings.baseShift - 1 + w) % 4 + 4) % 4;
+      const shiftId = n + 1;
+      const shift = shifts.find(s=>s.id===shiftId);
+      const monday = mondayLocalFromIndex(mondayIndexUTC(targetDate));
+      return {shift, monday};
+    }
 
+    // ===== UI
+    const $fecha=document.getElementById("fecha"), $btnConsultar=document.getElementById("btnConsultar");
+    const $lblFecha=document.getElementById("lblFecha"), $lblSemana=document.getElementById("lblSemana");
+    const $lblTurno=document.getElementById("lblTurno"), $lblHorario=document.getElementById("lblHorario"), $lblNota=document.getElementById("lblNota");
+    const $btnToggleCfg=document.getElementById("btnToggleCfg"), $configPanel=document.getElementById("configPanel");
+    const $btnConfigurar=document.getElementById("btnConfigurar"), $btnReset=document.getElementById("btnReset");
+
+    // Fecha por defecto = hoy
     $fecha.value = isoForInput(new Date());
 
-    function render(fecha){
-      const w = weeksSinceBase(fecha);
-      const monday = mondayLocalFromIndex(mondayIndexUTC(fecha));
-      const rotatedPeople = rotateRight(customPeople, w);
-
-      $enc.textContent = `🗓 Fecha: ${fmtDMY(fecha)} — 📅 Semana iniciada el: ${fmtDMY(monday)}`;
-      $grid.innerHTML = "";
-      for (let i=0;i<4;i++){
-        const t = turnosDef[i];
-        const p = rotatedPeople[i];
-        const card = document.createElement("div");
-        card.className="card";
-        card.innerHTML = `
-          <div class="title">${t.titulo}</div>
-          <div><strong>Horario:</strong> ${t.horario}</div>
-          <div><strong>Nombre:</strong> ${p}</div>
-        `;
-        $grid.appendChild(card);
-      }
+    function mostrarResultado(fecha){
+      const {shift, monday} = getShiftForDate(fecha);
+      $lblFecha.textContent   = `🗓 Fecha: ${fmtDMY(fecha)}`;
+      $lblSemana.textContent  = `📅 Semana iniciada el: ${fmtDMY(monday)}`;
+      $lblTurno.textContent   = `Te toca: ${shift.name}`;
+      $lblHorario.textContent = `🕒 Horario: ${shift.schedule}`;
+      $lblNota.textContent    = "";
     }
 
-    $btn.addEventListener("click", ()=>{
-      const d = $fecha.value ? new Date($fecha.value+"T12:00:00") : new Date();
-      render(d);
+    $btnConsultar.addEventListener("click", ()=>{
+      const fecha = $fecha.value ? new Date($fecha.value+"T12:00:00") : new Date();
+      mostrarResultado(fecha);
     });
 
-    $btnToggleCfg.addEventListener("click", ()=>{
-      const show = $cfg.style.display!=="block";
-      $cfg.style.display = show?"block":"none";
-      if (show){
-        $t1Nombre.value = customPeople[0]; $t1Horario.value = turnosDef[0].horario;
-        $t2Nombre.value = customPeople[1]; $t2Horario.value = turnosDef[1].horario;
-        $t3Nombre.value = customPeople[2]; $t3Horario.value = turnosDef[2].horario;
-        $t4Nombre.value = customPeople[3]; $t4Horario.value = turnosDef[3].horario;
-      }
-    });
+    $btnToggleCfg.addEventListener("click", ()=>{ $configPanel.style.display = ($configPanel.style.display==="block")?"none":"block"; });
 
-    $btnGuardar.addEventListener("click", ()=>{
-      customPeople[0] = $t1Nombre.value || customPeople[0];
-      customPeople[1] = $t2Nombre.value || customPeople[1];
-      customPeople[2] = $t3Nombre.value || customPeople[2];
-      customPeople[3] = $t4Nombre.value || customPeople[3];
-      Store.save("rolPeople", customPeople);
+    // Configurar (solo lunes base + turno actual)
+    $btnConfigurar.addEventListener("click", ()=>{
+      const baseRaw = prompt("Ingresa el LUNES base (YYYY-MM-DD o DD/MM/YYYY):", settings.startMondayISO || "2025-10-20");
+      if(!baseRaw) return;
+      const baseDt = parseFlexible(baseRaw);
+      if(!baseDt || isNaN(baseDt)) { alert("Fecha inválida."); return; }
+      // Normalizar al LUNES exacto
+      const baseMondayIdx = mondayIndexUTC(baseDt);
+      const baseMonday    = mondayLocalFromIndex(baseMondayIdx);
+      const baseISO       = isoForInput(baseMonday);
 
-      if ($t1Horario.value) turnosDef[0].horario = $t1Horario.value;
-      if ($t2Horario.value) turnosDef[1].horario = $t2Horario.value;
-      if ($t3Horario.value) turnosDef[2].horario = $t3Horario.value;
-      if ($t4Horario.value) turnosDef[3].horario = $t4Horario.value;
+      const turnoStr = prompt(
+        "¿En qué turno estás actualmente? (1..4)\n1. Turno 1 – Mañana\n2. Turno 2 – Noche\n3. Turno 3 – Tarde\n4. Turno 4 – Interna",
+        String(settings.baseShift || 1)
+      );
+      const turno = parseInt(turnoStr,10);
+      if (![1,2,3,4].includes(turno)) { alert("Valor inválido."); return; }
 
-      alert("Cambios guardados ✅");
-      const d = $fecha.value ? new Date($fecha.value+"T12:00:00") : new Date();
-      render(d);
+      settings.startMondayISO = baseISO;
+      settings.baseShift = turno;
+      settings.cycleWeeks = 4;
+      Store.save("settingsSimple", settings);
+
+      alert(`Configuración guardada ✅\n\nLunes base: ${fmtDMY(baseMonday)}\nTurno actual: ${turno}\nCiclo: 4 semanas`);
+      const fecha = $fecha.value ? new Date($fecha.value+"T12:00:00") : new Date();
+      mostrarResultado(fecha);
     });
 
     $btnReset.addEventListener("click", ()=>{
-      if (!confirm("¿Restablecer por defecto?")) return;
-      customPeople = defaultPeople.slice();
-      turnosDef[0].horario="7:00 a.m. - 3:00 p.m.";
-      turnosDef[1].horario="11:00 p.m. - 7:00 a.m.";
-      turnosDef[2].horario="3:00 p.m. - 11:00 p.m.";
-      turnosDef[3].horario="8:00 a.m. - 5:00 p.m.";
-      Store.save("rolPeople", customPeople);
-      const d = $fecha.value ? new Date($fecha.value+"T12:00:00") : new Date();
-      render(d);
-      alert("Listo");
+      if(!confirm("¿Restablecer valores por defecto?")) return;
+      settings = { startMondayISO:"2025-10-20", baseShift:1, cycleWeeks:4 };
+      Store.save("settingsSimple", settings);
+      mostrarResultado(new Date());
+      alert("Hecho");
     });
 
     // Primer render
-    render(new Date());
+    mostrarResultado(new Date());
   </script>
 </body>
 </html>
