@@ -1,198 +1,167 @@
-<!doctype html>
-<html lang="es">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>Turnos</title>
-  <link rel="manifest" href="manifest.json">
-  <meta name="theme-color" content="#00338D" />
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <meta name="apple-mobile-web-app-title" content="Turnos">
-  <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <style>
-    :root { --primary:#00338D; --border:#B0B0B0; }
-    *{ box-sizing:border-box; }
-    body{ margin:0; font-family:system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background:#fff; color:#111; }
-    header{ display:grid; grid-template-columns: 1fr auto; align-items:center; padding:12px 16px; border-bottom:1px solid #eee; }
-    header nav a{ margin-right:12px; text-decoration:none; color:#00338D; font-weight:600; }
-    header img{ height:28px; }
-    main{ max-width:800px; margin:0 auto; padding:16px; }
-    h1{ font-size:22px; margin:8px 0 16px; color:#111; font-weight:700; }
-    .row{ display:grid; grid-template-columns:1fr auto; gap:8px; align-items:center; }
-    button{ background:var(--primary); color:#fff; border:none; padding:10px 14px; border-radius:10px; font-weight:600; cursor:pointer; }
-    button.secondary{ background:#eee; color:#111; }
-    input[type="date"]{ padding:10px; border:1px solid #ccc; border-radius:8px; }
-    .card{ border:1px solid var(--border); border-radius:12px; padding:12px; }
-    .muted{ opacity:.75; font-size:12px; }
-    #configPanel{ display:none; }
-    .mt8{ margin-top:8px; } .mt12{ margin-top:12px; } .mt16{ margin-top:16px; }
-  </style>
-</head>
-<body>
-  <header>
-    <nav>
-      <a href="index.html">Consulta personal</a>
-      <a href="rol.html">Rol de turnos</a>
-    </nav>
-    <img src="icons/cemex_logo.png" alt="CEMEX" />
-  </header>
+<script>
+  // ===================== Persistencia =====================
+  const Store = {
+    load(k, def){ try{ return JSON.parse(localStorage.getItem(k)) ?? def }catch{ return def } },
+    save(k, v){ localStorage.setItem(k, JSON.stringify(v)); }
+  };
 
-  <main>
-    <h1>Consulta tu turno</h1>
+  // ===================== Turnos fijos =====================
+  const shifts = [
+    { id:1, name:"Turno 1 - Mañana",  schedule:"7:00 a.m. - 3:00 p.m." },
+    { id:2, name:"Turno 2 - Noche",   schedule:"11:00 p.m. - 7:00 a.m." },
+    { id:3, name:"Turno 3 - Tarde",   schedule:"3:00 p.m. - 11:00 p.m." },
+    { id:4, name:"Turno 4 - Interna", schedule:"8:00 a.m. - 5:00 p.m." }
+  ];
 
-    <div class="row">
-      <input id="fecha" type="date">
-      <button id="btnConsultar">Consultar</button>
-    </div>
+  // ===================== Configuración mínima compartida =====================
+  // startMonday: LUNES base (YYYY-MM-DD)
+  // baseShift:   turno activo esa semana (1..4)
+  // cycleWeeks:  fijo en 4
+  let settings = Store.load("settingsSimple", {
+    startMonday: "2025-10-20",
+    baseShift: 1,
+    cycleWeeks: 4
+  });
 
-    <div class="card mt12">
-      <div id="lblFecha" style="font-weight:700;"></div>
-      <div id="lblSemana"></div>
-      <div id="lblTurno" style="font-weight:700;"></div>
-      <div id="lblHorario"></div>
-      <div id="lblNota"></div>
-    </div>
+  // ===================== Utilidades de fecha (con normalización) =====================
+  // Acepta 'YYYY-MM-DD' o 'YYYY/MM/DD' y crea Date en zona local sin ambigüedad
+  function parseYmd(s) {
+    if (!s) return null;
+    const parts = s.trim().replace(/\//g, "-").split("-");
+    if (parts.length !== 3) return null;
+    const [y, m, d] = parts.map(n => parseInt(n, 10));
+    if (!y || !m || !d) return null;
+    return new Date(y, m - 1, d); // Fecha local
+  }
 
-    <div class="mt16">
-      <button id="btnToggleCfg">⚙️ Configuración</button>
-      <div id="configPanel" class="mt12">
-        <button id="btnConfigurar">Configurar ciclo</button>
-      </div>
-      <button id="btnReset" class="mt8 secondary">Restablecer valores por defecto</button>
-      <p class="muted mt8">
-        Define el <b>lunes base</b> y el <b>turno en el que estás actualmente</b>. El ciclo es siempre de 4 semanas.
-      </p>
-    </div>
-  </main>
+  // Lunes de la semana de una fecha (local)
+  function toMonday(d) {
+    const dt = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const day = (dt.getDay() + 6) % 7; // lunes=0
+    dt.setDate(dt.getDate() - day);
+    return dt;
+  }
 
-  <script>
-    // ---- Persistencia
-    const Store = {
-      load(k, def){ try{ return JSON.parse(localStorage.getItem(k)) ?? def }catch{ return def } },
-      save(k, v){ localStorage.setItem(k, JSON.stringify(v)); }
-    };
+  // YYYY-MM-DD en zona local
+  function formatYYYYMMDD(d) {
+    return new Date(d.getTime() - d.getTimezoneOffset()*60000).toISOString().slice(0,10);
+  }
+  function setDateValue(input, date){ input.value = formatYYYYMMDD(date); }
+  function getDateValue(input){ return input.value ? new Date(input.value + "T12:00:00") : new Date(); }
 
-    // Turnos
-    const shifts = [
-      { id:1, name:"Turno 1 - Mañana",  schedule:"7:00 a.m. - 3:00 p.m." },
-      { id:2, name:"Turno 2 - Noche",   schedule:"11:00 p.m. - 7:00 a.m." },
-      { id:3, name:"Turno 3 - Tarde",   schedule:"3:00 p.m. - 11:00 p.m." },
-      { id:4, name:"Turno 4 - Interna", schedule:"8:00 a.m. - 5:00 p.m." }
-    ];
+  // Semanas transcurridas (enteras) entre el lunes de la fecha y el lunes base
+  function weeksSinceBase(date){
+    const monday = toMonday(date);
+    const base   = toMonday(parseYmd(settings.startMonday));
+    const msWeek = 7*24*3600*1000;
+    return Math.floor((monday - base) / msWeek);
+  }
 
-    // Config mínima que usarán ambas páginas (esta y rol.html)
-    let settings = Store.load("settingsSimple", {
-      startMonday: "2025-10-20", // ejemplo
-      baseShift: 1,              // turno en el que estás esa semana (1..4)
-      cycleWeeks: 4              // fijo
-    });
+  // ===================== Cálculo del turno =====================
+  function getShiftForDate(targetDate){
+    const monday = toMonday(targetDate);
+    const w = weeksSinceBase(targetDate);
+    // turno = baseShift + semanasTranscurridas (mod 4), en [1..4]
+    const n = ((settings.baseShift - 1 + w) % 4 + 4) % 4;
+    const shiftId = n + 1;
+    const shift = shifts.find(s => s.id === shiftId);
+    return { shift, monday };
+  }
 
-    // --- Fechas
-    const toMonday = (d)=>{ const dt=new Date(d.getFullYear(),d.getMonth(),d.getDate()); const day=(dt.getDay()+6)%7; dt.setDate(dt.getDate()-day); return dt; };
-    const fmt = (d)=> d.toLocaleDateString("es-MX",{day:"2-digit",month:"2-digit",year:"numeric"});
-    const formatYYYYMMDD = (d)=> new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10);
-    const setDateValue = (input,date)=> input.value = formatYYYYMMDD(date);
-    const getDateValue = (input)=> input.value ? new Date(input.value+"T12:00:00") : new Date();
+  // ===================== UI refs =====================
+  const $fecha        = document.getElementById("fecha");
+  const $btnConsultar = document.getElementById("btnConsultar");
+  const $lblFecha     = document.getElementById("lblFecha");
+  const $lblSemana    = document.getElementById("lblSemana");
+  const $lblTurno     = document.getElementById("lblTurno");
+  const $lblHorario   = document.getElementById("lblHorario");
+  const $lblNota      = document.getElementById("lblNota");
+  const $btnToggleCfg = document.getElementById("btnToggleCfg");
+  const $configPanel  = document.getElementById("configPanel");
+  const $btnConfigurar= document.getElementById("btnConfigurar");
+  const $btnReset     = document.getElementById("btnReset");
 
-    function weeksSinceBase(date){
-      const monday = toMonday(date);
-      const base = toMonday(new Date(settings.startMonday));
-      return Math.floor((monday - base)/(7*24*3600*1000));
-    }
+  // Fecha por defecto = hoy
+  setDateValue($fecha, new Date());
 
-    // Cálculo directo del turno
-    function getShiftForDate(targetDate){
-      const monday = toMonday(targetDate);
-      const w = weeksSinceBase(targetDate);
-      const n = ((settings.baseShift - 1 + w) % 4 + 4) % 4; // módulo seguro
-      const shiftId = n + 1;
-      const shift = shifts.find(s => s.id === shiftId);
-      return { shift, monday };
-    }
+  // Formato amigable
+  const fmt = (d)=> d.toLocaleDateString("es-MX",{day:"2-digit",month:"2-digit",year:"numeric"});
 
-    // --- UI
-    const $fecha = document.getElementById("fecha");
-    const $btnConsultar = document.getElementById("btnConsultar");
-    const $lblFecha = document.getElementById("lblFecha");
-    const $lblSemana = document.getElementById("lblSemana");
-    const $lblTurno = document.getElementById("lblTurno");
-    const $lblHorario = document.getElementById("lblHorario");
-    const $lblNota = document.getElementById("lblNota");
-    const $btnToggleCfg = document.getElementById("btnToggleCfg");
-    const $configPanel = document.getElementById("configPanel");
-    const $btnConfigurar = document.getElementById("btnConfigurar");
-    const $btnReset = document.getElementById("btnReset");
+  function mostrarResultado(fecha){
+    const {shift, monday} = getShiftForDate(fecha);
+    $lblFecha.textContent   = `🗓 Fecha: ${fmt(fecha)}`;
+    $lblSemana.textContent  = `📅 Semana iniciada el: ${fmt(monday)}`;
+    $lblTurno.textContent   = `Te toca: ${shift.name}`;
+    $lblHorario.textContent = `🕒 Horario: ${shift.schedule}`;
+    $lblNota.textContent    = "";
+  }
 
-    setDateValue($fecha, new Date());
+  // ===================== Eventos =====================
+  $btnConsultar.addEventListener("click", ()=> mostrarResultado(getDateValue($fecha)));
 
-    function mostrarResultado(fecha){
-      const {shift, monday} = getShiftForDate(fecha);
-      $lblFecha.textContent = `🗓 Fecha: ${fmt(fecha)}`;
-      $lblSemana.textContent = `📅 Semana iniciada el: ${fmt(monday)}`;
-      $lblTurno.textContent = `Te toca: ${shift.name}`;
-      $lblHorario.textContent = `🕒 Horario: ${shift.schedule}`;
-      $lblNota.textContent = "";
-    }
+  $btnToggleCfg.addEventListener("click", ()=>{
+    const show = $configPanel.style.display !== "block";
+    $configPanel.style.display = show ? "block" : "none";
+  });
 
-    $btnConsultar.addEventListener("click", ()=> mostrarResultado(getDateValue($fecha)));
+  // Configurar ciclo (SOLO lunes base y turno actual)
+  $btnConfigurar.addEventListener("click", ()=>{
+    const baseRaw = prompt("Ingresa el LUNES base (YYYY-MM-DD):", settings.startMonday || "2025-10-20");
+    if (!baseRaw) return;
 
-    $btnToggleCfg.addEventListener("click", ()=>{
-      const show = $configPanel.style.display !== "block";
-      $configPanel.style.display = show ? "block" : "none";
-    });
+    const baseDt = parseYmd(baseRaw);
+    if (!baseDt || isNaN(baseDt)) { alert("Fecha inválida. Usa formato YYYY-MM-DD."); return; }
 
-    // >>> Configurar ciclo (solo lunes base + turno actual)
-    $btnConfigurar.addEventListener("click", ()=>{
-      const base = prompt("Ingresa el lunes base (YYYY-MM-DD):", settings.startMonday || "2025-10-20");
-      if (!base) return;
+    // Normalizamos para guardar exactamente el LUNES de esa semana
+    const baseMonday = toMonday(baseDt);
+    const baseStr    = formatYYYYMMDD(baseMonday);
 
-      const turnoBaseStr = prompt(
-        "¿En qué turno estás actualmente? (1..4)\n" +
-        "1. Turno 1 – Mañana\n" +
-        "2. Turno 2 – Noche\n" +
-        "3. Turno 3 – Tarde\n" +
-        "4. Turno 4 – Interna",
-        String(settings.baseShift || 1)
-      );
-      const turnoBase = parseInt(turnoBaseStr, 10);
-      if (![1,2,3,4].includes(turnoBase)) { alert("Valor de turno inválido."); return; }
+    const turnoBaseStr = prompt(
+      "¿En qué turno estás actualmente (en la semana del LUNES base)? (1..4)\n" +
+      "1. Turno 1 – Mañana\n" +
+      "2. Turno 2 – Noche\n" +
+      "3. Turno 3 – Tarde\n" +
+      "4. Turno 4 – Interna",
+      String(settings.baseShift || 1)
+    );
+    const turnoBase = parseInt(turnoBaseStr, 10);
+    if (![1,2,3,4].includes(turnoBase)) { alert("Valor de turno inválido."); return; }
 
-      settings.startMonday = base;
-      settings.baseShift = turnoBase;
-      settings.cycleWeeks = 4; // fijo
-      Store.save("settingsSimple", settings);
+    settings.startMonday = baseStr;   // guardamos el LUNES exacto
+    settings.baseShift   = turnoBase; // turno activo esa semana
+    settings.cycleWeeks  = 4;         // fijo
+    Store.save("settingsSimple", settings);
 
-      alert(
-        "Configuración guardada ✅\n\n" +
-        `Lunes base: ${settings.startMonday}\n` +
-        `Turno actual (semana base): ${turnoBase}\n` +
-        `Ciclo: 4 semanas`
-      );
+    alert(
+      "Configuración guardada ✅\n\n" +
+      `Lunes base: ${settings.startMonday}\n` +
+      `Turno actual (SEMANA BASE): ${turnoBase}\n` +
+      `Ciclo: 4 semanas`
+    );
 
-      mostrarResultado(getDateValue($fecha));
-    });
+    mostrarResultado(getDateValue($fecha));
+  });
 
-    $btnReset.addEventListener("click", ()=>{
-      if (!confirm("¿Restablecer a valores por defecto?")) return;
-      settings = { startMonday:"2025-10-20", baseShift:1, cycleWeeks:4 };
-      Store.save("settingsSimple", settings);
-      mostrarResultado(getDateValue($fecha));
-      alert("Hecho");
-    });
+  $btnReset.addEventListener("click", ()=>{
+    if (!confirm("¿Restablecer a valores por defecto?")) return;
+    settings = { startMonday:"2025-10-20", baseShift:1, cycleWeeks:4 };
+    Store.save("settingsSimple", settings);
+    mostrarResultado(getDateValue($fecha));
+    alert("Hecho");
+  });
 
-    mostrarResultado(new Date());
+  // Primer render
+  mostrarResultado(new Date());
 
-    if ("serviceWorker" in navigator) {
-      window.addEventListener("load", ()=> navigator.serviceWorker.register("sw.js"));
-    }
-    // Quita cualquier botón que diga "Editar patrón", por si algún HTML viejo se está cacheando.
-document.getElementById('btnEditarPatron')?.remove();
-[...document.querySelectorAll('button')].forEach(b=>{
-  const t=(b.textContent||"").trim().toLowerCase();
-  if (t==="editar patrón" || t==="editar patron") b.remove();
-});
+  // Por si algún HTML viejo aún trae el botón "Editar patrón", lo removemos a la fuerza:
+  document.getElementById('btnEditarPatron')?.remove();
+  [...document.querySelectorAll('button')].forEach(b=>{
+    const t=(b.textContent||"").trim().toLowerCase();
+    if (t==="editar patrón" || t==="editar patron") b.remove();
+  });
 
-  </script>
-</body>
-</html>
+  // Registrar Service Worker
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", ()=> navigator.serviceWorker.register("sw.js"));
+  }
+</script>
