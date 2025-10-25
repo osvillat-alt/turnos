@@ -46,7 +46,7 @@
       <button id="btnConsultar">Consultar</button>
     </div>
 
-    <div class="card mt12" id="resultado">
+    <div class="card mt12">
       <div id="lblFecha" style="font-weight:700;"></div>
       <div id="lblSemana"></div>
       <div id="lblTurno" style="font-weight:700;"></div>
@@ -61,64 +61,57 @@
       </div>
       <button id="btnReset" class="mt8 secondary">Restablecer valores por defecto</button>
       <p class="muted mt8">
-        Tip: define el <b>lunes base</b> y el <b>turno activo esa semana</b>. El resto se calcula solo.
+        Define el <b>lunes base</b> y el <b>turno en el que estás actualmente</b>. El ciclo es siempre de 4 semanas.
       </p>
     </div>
   </main>
 
   <script>
-    // --- Persistencia simple ---
+    // ---- Persistencia
     const Store = {
       load(k, def){ try{ return JSON.parse(localStorage.getItem(k)) ?? def }catch{ return def } },
       save(k, v){ localStorage.setItem(k, JSON.stringify(v)); }
     };
 
-    // Turnos fijos (ajusta nombres/horarios si quieres)
+    // Turnos
     const shifts = [
-      { id:1, name:"Turno 1 - Mañana", schedule:"7:00 a.m. - 3:00 p.m." },
-      { id:2, name:"Turno 2 - Noche",  schedule:"11:00 p.m. - 7:00 a.m." },
-      { id:3, name:"Turno 3 - Tarde",  schedule:"3:00 p.m. - 11:00 p.m." },
-      { id:4, name:"Turno 4 - Interna",schedule:"8:00 a.m. - 5:00 p.m." }
+      { id:1, name:"Turno 1 - Mañana",  schedule:"7:00 a.m. - 3:00 p.m." },
+      { id:2, name:"Turno 2 - Noche",   schedule:"11:00 p.m. - 7:00 a.m." },
+      { id:3, name:"Turno 3 - Tarde",   schedule:"3:00 p.m. - 11:00 p.m." },
+      { id:4, name:"Turno 4 - Interna", schedule:"8:00 a.m. - 5:00 p.m." }
     ];
 
-    // Configuración mínima: lunes base + turnoBase (1..4)
-    // Nota: cycleWeeks lo dejamos fijo a 4 para claridad.
+    // Config mínima que usarán ambas páginas (esta y rol.html)
     let settings = Store.load("settingsSimple", {
       startMonday: "2025-10-20", // ejemplo
-      baseShift: 1,              // 1..4 (turno que está activo en ese lunes base)
-      cycleWeeks: 4
+      baseShift: 1,              // turno en el que estás esa semana (1..4)
+      cycleWeeks: 4              // fijo
     });
 
-    // Utilidades de fecha (compat Safari/iPhone)
-    const toMonday = (d)=> {
-      const dt = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-      const day = (dt.getDay()+6)%7; // lunes=0
-      dt.setDate(dt.getDate()-day);
-      return dt;
-    };
-    const fmt = (d)=> d.toLocaleDateString("es-MX", {day:"2-digit", month:"2-digit", year:"numeric"});
-    function formatYYYYMMDD(d){ return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10); }
-    function setDateValue(input, date){ input.value = formatYYYYMMDD(date); }
-    function getDateValue(input){ return input.value ? new Date(input.value + "T12:00:00") : new Date(); }
+    // --- Fechas
+    const toMonday = (d)=>{ const dt=new Date(d.getFullYear(),d.getMonth(),d.getDate()); const day=(dt.getDay()+6)%7; dt.setDate(dt.getDate()-day); return dt; };
+    const fmt = (d)=> d.toLocaleDateString("es-MX",{day:"2-digit",month:"2-digit",year:"numeric"});
+    const formatYYYYMMDD = (d)=> new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10);
+    const setDateValue = (input,date)=> input.value = formatYYYYMMDD(date);
+    const getDateValue = (input)=> input.value ? new Date(input.value+"T12:00:00") : new Date();
 
-    // Semanas transcurridas desde el lunes base
     function weeksSinceBase(date){
       const monday = toMonday(date);
       const base = toMonday(new Date(settings.startMonday));
       return Math.floor((monday - base)/(7*24*3600*1000));
     }
 
-    // Cálculo directo del turno para una fecha dada
+    // Cálculo directo del turno
     function getShiftForDate(targetDate){
       const monday = toMonday(targetDate);
-      const w = weeksSinceBase(targetDate); // puede ser negativo
+      const w = weeksSinceBase(targetDate);
       const n = ((settings.baseShift - 1 + w) % 4 + 4) % 4; // módulo seguro
-      const shiftId = n + 1; // 1..4
+      const shiftId = n + 1;
       const shift = shifts.find(s => s.id === shiftId);
       return { shift, monday };
     }
 
-    // --- UI refs ---
+    // --- UI
     const $fecha = document.getElementById("fecha");
     const $btnConsultar = document.getElementById("btnConsultar");
     const $lblFecha = document.getElementById("lblFecha");
@@ -131,18 +124,12 @@
     const $btnConfigurar = document.getElementById("btnConfigurar");
     const $btnReset = document.getElementById("btnReset");
 
-    // Fecha por defecto = hoy
     setDateValue($fecha, new Date());
 
     function mostrarResultado(fecha){
       const {shift, monday} = getShiftForDate(fecha);
       $lblFecha.textContent = `🗓 Fecha: ${fmt(fecha)}`;
       $lblSemana.textContent = `📅 Semana iniciada el: ${fmt(monday)}`;
-      if (!shift){
-        $lblTurno.textContent = "⚠️ Falta configurar el ciclo.";
-        $lblHorario.textContent=""; $lblNota.textContent="";
-        return;
-      }
       $lblTurno.textContent = `Te toca: ${shift.name}`;
       $lblHorario.textContent = `🕒 Horario: ${shift.schedule}`;
       $lblNota.textContent = "";
@@ -150,20 +137,18 @@
 
     $btnConsultar.addEventListener("click", ()=> mostrarResultado(getDateValue($fecha)));
 
-    // Mostrar/ocultar panel
     $btnToggleCfg.addEventListener("click", ()=>{
       const show = $configPanel.style.display !== "block";
       $configPanel.style.display = show ? "block" : "none";
     });
 
-    // *** CONFIGURACIÓN SIMPLE ***
-    // Pedir lunes base (YYYY-MM-DD) y turno activo (1..4)
+    // >>> Configurar ciclo (solo lunes base + turno actual)
     $btnConfigurar.addEventListener("click", ()=>{
       const base = prompt("Ingresa el lunes base (YYYY-MM-DD):", settings.startMonday || "2025-10-20");
       if (!base) return;
 
       const turnoBaseStr = prompt(
-        "¿Qué turno está activo esa semana?\n" +
+        "¿En qué turno estás actualmente? (1..4)\n" +
         "1. Turno 1 – Mañana\n" +
         "2. Turno 2 – Noche\n" +
         "3. Turno 3 – Tarde\n" +
@@ -175,20 +160,19 @@
 
       settings.startMonday = base;
       settings.baseShift = turnoBase;
-      settings.cycleWeeks = 4;
+      settings.cycleWeeks = 4; // fijo
       Store.save("settingsSimple", settings);
 
       alert(
         "Configuración guardada ✅\n\n" +
         `Lunes base: ${settings.startMonday}\n` +
-        `Turno activo en esa semana: ${turnoBase}\n` +
-        `Ciclo: ${settings.cycleWeeks} semanas`
+        `Turno actual (semana base): ${turnoBase}\n` +
+        `Ciclo: 4 semanas`
       );
 
       mostrarResultado(getDateValue($fecha));
     });
 
-    // Restablecer
     $btnReset.addEventListener("click", ()=>{
       if (!confirm("¿Restablecer a valores por defecto?")) return;
       settings = { startMonday:"2025-10-20", baseShift:1, cycleWeeks:4 };
@@ -197,10 +181,8 @@
       alert("Hecho");
     });
 
-    // Primer render
     mostrarResultado(new Date());
 
-    // Registrar Service Worker
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", ()=> navigator.serviceWorker.register("sw.js"));
     }
