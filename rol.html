@@ -4,19 +4,12 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>Rol de turnos</title>
-  <link rel="manifest" href="manifest.json">
-  <meta name="theme-color" content="#00338D" />
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <meta name="apple-mobile-web-app-title" content="Rol">
-  <link rel="apple-touch-icon" href="icons/icon-192.png">
   <style>
     :root { --primary:#00338D; --border:#B0B0B0; }
     *{ box-sizing:border-box; }
     body{ margin:0; font-family:system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background:#fff; color:#111; }
     header{ display:grid; grid-template-columns: 1fr auto; align-items:center; padding:12px 16px; border-bottom:1px solid #eee; }
     header nav a{ margin-right:12px; text-decoration:none; color:#00338D; font-weight:600; }
-    header img{ height:28px; }
     main{ max-width:900px; margin:0 auto; padding:16px; }
     h1{ font-size:22px; margin:8px 0 16px; color:#111; font-weight:700; }
     .row{ display:grid; grid-template-columns:1fr auto; gap:8px; align-items:center; }
@@ -26,15 +19,17 @@
     .card{ border:1px solid var(--border); border-radius:12px; padding:12px; }
     .title{ font-weight:700; margin-bottom:4px; }
     .muted{ opacity:.75; font-size:12px; }
+    .headerbar {display:flex; gap:12px; align-items:center;}
   </style>
 </head>
 <body>
   <header>
-    <nav>
+    <nav class="headerbar">
       <a href="index.html">Consulta personal</a>
       <a href="rol.html">Rol de turnos</a>
     </nav>
-    <img src="icons/cemex_logo.png" alt="CEMEX" />
+    <!-- Si no existe el logo, no pasa nada. Evitamos que falle algo por rutas -->
+    <img src="icons/cemex_logo.png" alt="CEMEX" onerror="this.style.display='none';" style="height:28px"/>
   </header>
 
   <main>
@@ -55,28 +50,22 @@
   </main>
 
   <script>
-    // ===================== DATOS FIJOS =====================
-    // Semana base (dd/mm/yyyy)
+    // ===== DATOS FIJOS =====
     const BASE_MONDAY_DMY = "20/10/2025";
-
-    // Títulos/horarios fijos por turno
     const TURNOS = [
       { titulo:"Turno 1 - Mañana (Full)", horario:"7:00 a.m. - 3:00 p.m." },
       { titulo:"Turno 2 - Noche",         horario:"11:00 p.m. - 7:00 a.m." },
       { titulo:"Turno 3 - Tarde (Full)",  horario:"3:00 p.m. - 11:00 p.m." },
       { titulo:"Turno 4 - Agregado",      horario:"8:00 a.m. - 5:00 p.m." }
     ];
-
-    // Personas base para la semana del 20/10/2025
-    // [T1, T2, T3, T4]
     const PEOPLE_BASE = [
-      "Marisol Caldera",
-      "Gualberto Rodriguez",
-      "Humberto Castillo",
-      "Edgar Pérez"
+      "Marisol Caldera",       // T1
+      "Gualberto Rodriguez",   // T2
+      "Humberto Castillo",     // T3
+      "Edgar Pérez"            // T4
     ];
 
-    // ===================== UTILIDADES FECHA =====================
+    // ===== UTILIDADES FECHA (robustas a DST) =====
     function parseDMY(s){
       if (!s) return null;
       const [d,m,y] = s.trim().split(/[\/\-]/).map(n=>parseInt(n,10));
@@ -86,19 +75,15 @@
     function formatDMY(d){
       return d.toLocaleDateString("es-MX",{day:"2-digit",month:"2-digit",year:"numeric"});
     }
-
-    // Convertimos a "medianoche UTC" para evitar DST
+    // UTC helpers para evitar DST en semanas
     function asUTCDate(d){ return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())); }
     function dayIndexUTC(d){ return Math.floor(asUTCDate(d).getTime() / 86400000); }
-    // Índice de lunes (UTC) de la semana de 'd'
     function mondayIndexUTC(d){
       const u = asUTCDate(d);
       const dow = (u.getUTCDay()+6)%7; // lunes=0
       return dayIndexUTC(d) - dow;
     }
     function mondayLocalFromIndex(idx){ return new Date(idx*86400000); }
-
-    // ===================== ROTACIÓN =====================
     function rotateRight(arr, n){
       const a = arr.slice();
       const k = ((n % a.length) + a.length) % a.length;
@@ -106,34 +91,30 @@
       return a.slice(-k).concat(a.slice(0, -k));
     }
 
-    // Semanas transcurridas desde la base (entero, usando UTC)
     const BASE_IDX = mondayIndexUTC(parseDMY(BASE_MONDAY_DMY));
     function weeksSinceBase(date){
       const idx = mondayIndexUTC(date);
-      return idx - BASE_IDX; // 0 = misma semana base
+      return idx - BASE_IDX; // entero
     }
 
-    // ===================== UI =====================
+    // ===== UI =====
     const $fecha = document.getElementById("fecha");
-    const $btn = document.getElementById("btnConsultar");
-    const $enc = document.getElementById("encabezado");
-    const $grid = document.getElementById("gridTurnos");
+    const $btn   = document.getElementById("btnConsultar");
+    const $enc   = document.getElementById("encabezado");
+    const $grid  = document.getElementById("gridTurnos");
 
-    // Set hoy en input date (formato ISO local para <input type="date">)
     function formatYYYYMMDD(d){ return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10); }
     $fecha.value = formatYYYYMMDD(new Date());
 
     function render(fecha){
       const w = weeksSinceBase(fecha);
-      const mondayIdx = mondayIndexUTC(fecha);
+      const mondayIdx   = mondayIndexUTC(fecha);
       const mondayLocal = mondayLocalFromIndex(mondayIdx);
 
-      // Rota personas w semanas a la derecha
       const peopleRotated = rotateRight(PEOPLE_BASE, w);
 
       $enc.textContent = `🗓 Fecha: ${formatDMY(fecha)} — 📅 Semana iniciada el: ${formatDMY(mondayLocal)}`;
 
-      // Cuadros
       $grid.innerHTML = "";
       for (let i=0; i<4; i++){
         const t = TURNOS[i];
@@ -154,13 +135,8 @@
       render(d);
     });
 
-    // primer render (hoy)
+    // Primer render
     render(new Date());
-
-    // PWA SW
-    if ("serviceWorker" in navigator) {
-      window.addEventListener("load", ()=> navigator.serviceWorker.register("sw.js"));
-    }
   </script>
 </body>
 </html>
