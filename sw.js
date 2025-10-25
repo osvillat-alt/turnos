@@ -1,11 +1,10 @@
-// sw.js — cachea assets y actualiza cuando subes nueva versión
-const CACHE = 'turnos-v1';
+// sw.js — cache simple
+const CACHE = 'turnos-v2';
 const ASSETS = [
   './',
   './index.html',
   './rol.html',
   './icons/cemex_logo.png',
-  // agrega aquí otros archivos estáticos si quieres cachearlos
 ];
 
 self.addEventListener('install', (event) => {
@@ -22,13 +21,13 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// HTML: network-first (para que veas actualizaciones del servidor)
-// Otros (CSS/JS/imagenes): cache-first con actualización en segundo plano
+// HTML: network-first; Otros: cache-first
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET') return;
 
-  if (req.headers.get('accept')?.includes('text/html')) {
+  const accept = req.headers.get('accept') || '';
+  if (accept.includes('text/html')) {
     event.respondWith(
       fetch(req).then(res => {
         const copy = res.clone();
@@ -49,7 +48,6 @@ self.addEventListener('fetch', (event) => {
   }
 });
 
-// Permite forzar actualizar (opcional)
 self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting();
 });
