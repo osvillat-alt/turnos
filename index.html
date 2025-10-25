@@ -72,50 +72,50 @@
 
     // ===== Config compartida
     let settings = Store.load("settingsSimple", {
-      // Guardamos ISO (YYYY-MM-DD) del LUNES exacto para evitar ambigüedad
-      startMondayISO: "2025-10-20",
+      startMondayISO: "2025-10-20",  // siempre guardado como lunes (YYYY-MM-DD)
       baseShift: 1,
       cycleWeeks: 4
     });
 
-    // ===== Utilidades de fecha (robustas / DST-safe)
+    // ===== Utilidades de fecha
     const fmtDMY = d => d.toLocaleDateString("es-MX",{day:"2-digit",month:"2-digit",year:"numeric"});
     const isoForInput = d => new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10);
 
-    // Acepta YYYY-MM-DD o DD/MM/YYYY y devuelve Date local
+    // Acepta YYYY-MM-DD o DD/MM/YYYY
     function parseFlexible(s){
       if(!s) return null;
       s = s.trim();
-      if (/^\d{4}-\d{2}-\d{2}$/.test(s)) { // ISO
-        const [y,m,d]=s.split("-").map(n=>parseInt(n,10)); return new Date(y,m-1,d);
-      }
-      const parts = s.replace(/-/g,"/").split("/"); // D/M/Y
-      if (parts.length===3){
-        const [d,m,y] = parts.map(n=>parseInt(n,10));
-        if (y && m && d) return new Date(y,m-1,d);
-      }
+      if (/^\d{4}-\d{2}-\d{2}$/.test(s)) { const [y,m,d]=s.split("-").map(Number); return new Date(y,m-1,d); }
+      const p = s.replace(/-/g,"/").split("/").map(Number);
+      if (p.length===3) { const [d,m,y]=p; return new Date(y,m-1,d); }
       return null;
     }
 
-    // Helpers UTC para contar semanas sin errores de DST
-    const asUTC = d => new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
-    const dayIndexUTC = d => Math.floor(asUTC(d).getTime()/86400000);
-    const mondayIndexUTC = d => { const u=asUTC(d); const dow=(u.getUTCDay()+6)%7; return dayIndexUTC(d)-dow; };
-    const mondayLocalFromIndex = idx => new Date(idx*86400000);
+    // Lunes de una fecha en horario LOCAL (evita caer al domingo por zona horaria)
+    function mondayLocalOf(date){
+      const dt = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+      const dow = (dt.getDay()+6)%7; // lunes=0
+      dt.setDate(dt.getDate()-dow);
+      return dt;
+    }
+
+    // Índice de semanas robusto: usa el índice UTC del LUNES LOCAL
+    const asUTC   = d => new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+    const dayIdxU = d => Math.floor(asUTC(d).getTime()/86400000);
+    const weekIdx = d => Math.floor(dayIdxU(mondayLocalOf(d)) / 7);
 
     function weeksSinceBase(date){
-      const wDate = mondayIndexUTC(date);
-      const wBase = mondayIndexUTC(parseFlexible(settings.startMondayISO));
-      return wDate - wBase; // entero
+      const base = parseFlexible(settings.startMondayISO);
+      return weekIdx(date) - weekIdx(base);
     }
 
     function getShiftForDate(targetDate){
-      const w = weeksSinceBase(targetDate);
-      const n = ((settings.baseShift - 1 + w) % 4 + 4) % 4;
-      const shiftId = n + 1;
-      const shift = shifts.find(s=>s.id===shiftId);
-      const monday = mondayLocalFromIndex(mondayIndexUTC(targetDate));
-      return {shift, monday};
+      const w  = weeksSinceBase(targetDate);
+      const n  = ((settings.baseShift - 1 + w) % 4 + 4) % 4;
+      const id = n + 1;
+      const shift  = shifts.find(s=>s.id===id);
+      const monday = mondayLocalOf(targetDate);
+      return { shift, monday };
     }
 
     // ===== UI
@@ -125,7 +125,6 @@
     const $btnToggleCfg=document.getElementById("btnToggleCfg"), $configPanel=document.getElementById("configPanel");
     const $btnConfigurar=document.getElementById("btnConfigurar"), $btnReset=document.getElementById("btnReset");
 
-    // Fecha por defecto = hoy
     $fecha.value = isoForInput(new Date());
 
     function mostrarResultado(fecha){
@@ -137,23 +136,23 @@
       $lblNota.textContent    = "";
     }
 
-    $btnConsultar.addEventListener("click", ()=>{
+    $btnConsultar.addEventListener("click", ()=> {
       const fecha = $fecha.value ? new Date($fecha.value+"T12:00:00") : new Date();
       mostrarResultado(fecha);
     });
 
-    $btnToggleCfg.addEventListener("click", ()=>{ $configPanel.style.display = ($configPanel.style.display==="block")?"none":"block"; });
+    $btnToggleCfg.addEventListener("click", ()=>{
+      $configPanel.style.display = ($configPanel.style.display==="block")?"none":"block";
+    });
 
-    // Configurar (solo lunes base + turno actual)
+    // Configurar (lunes base + turno actual)
     $btnConfigurar.addEventListener("click", ()=>{
       const baseRaw = prompt("Ingresa el LUNES base (YYYY-MM-DD o DD/MM/YYYY):", settings.startMondayISO || "2025-10-20");
       if(!baseRaw) return;
       const baseDt = parseFlexible(baseRaw);
       if(!baseDt || isNaN(baseDt)) { alert("Fecha inválida."); return; }
-      // Normalizar al LUNES exacto
-      const baseMondayIdx = mondayIndexUTC(baseDt);
-      const baseMonday    = mondayLocalFromIndex(baseMondayIdx);
-      const baseISO       = isoForInput(baseMonday);
+      const baseMonday = mondayLocalOf(baseDt);        // <<< corrección clave
+      const baseISO    = isoForInput(baseMonday);
 
       const turnoStr = prompt(
         "¿En qué turno estás actualmente? (1..4)\n1. Turno 1 – Mañana\n2. Turno 2 – Noche\n3. Turno 3 – Tarde\n4. Turno 4 – Interna",
@@ -182,6 +181,11 @@
 
     // Primer render
     mostrarResultado(new Date());
+
+    // PWA (opcional)
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', ()=> navigator.serviceWorker.register('sw.js'));
+    }
   </script>
 </body>
 </html>
