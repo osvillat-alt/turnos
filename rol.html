@@ -72,8 +72,7 @@
       </div>
     </div>
 
-    <p class="muted mt8">Base: T1=Marisol, T2=Gualberto, T3=Humberto, T4=Edgar. La semana base es la del lunes configurado en “Consulta personal”.</p>
-  </main>
+    </main>
 
   <script>
     // ===== Persistencia
@@ -134,7 +133,7 @@
       const w = weeksSinceBase(fecha);
       const mondayLocal = mondayLocalOf(fecha);
       // Rotación correcta: semana +1 → Edgar, Marisol, Gualberto, Humberto
-      const rotated = rotateRight(customPeople, -w);
+      const rotated = rotateRight(customPeople, w);
 
       $enc.textContent = `🗓 Fecha: ${fmtDMY(fecha)} — 📅 Semana iniciada el: ${fmtDMY(mondayLocal)}`;
       $grid.innerHTML = "";
