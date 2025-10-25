@@ -186,6 +186,13 @@
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", ()=> navigator.serviceWorker.register("sw.js"));
     }
+    // Quita cualquier botón que diga "Editar patrón", por si algún HTML viejo se está cacheando.
+document.getElementById('btnEditarPatron')?.remove();
+[...document.querySelectorAll('button')].forEach(b=>{
+  const t=(b.textContent||"").trim().toLowerCase();
+  if (t==="editar patrón" || t==="editar patron") b.remove();
+});
+
   </script>
 </body>
 </html>
