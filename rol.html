@@ -1,204 +1,132 @@
-<!doctype html>
-<html lang="es">
-<head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>Rol de turnos</title>
-  <style>
-    :root { --primary:#00338D; --border:#B0B0B0; }
-    *{ box-sizing:border-box; }
-    body{ margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; background:#fff; color:#111; }
-    header{ display:grid; grid-template-columns: 1fr auto; align-items:center; padding:12px 16px; border-bottom:1px solid #eee; }
-    header nav a{ margin-right:12px; text-decoration:none; color:#00338D; font-weight:600; }
-    header img{ height:28px; }
-    main{ max-width:900px; margin:0 auto; padding:16px; }
-    h1{ font-size:22px; margin:8px 0 16px; font-weight:700; }
-    .row{ display:grid; grid-template-columns:1fr auto; gap:8px; align-items:center; }
-    button{ background:var(--primary); color:#fff; border:none; padding:10px 14px; border-radius:10px; font-weight:600; cursor:pointer; }
-    input[type="date"]{ padding:10px; border:1px solid #ccc; border-radius:8px; }
-    .grid{ display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap:12px; margin-top:12px; }
-    .card{ border:1px solid var(--border); border-radius:12px; padding:12px; }
-    .title{ font-weight:700; margin-bottom:4px; }
-    .muted{ opacity:.75; font-size:12px; }
-    #configPanel{ display:none; margin-top:12px; }
-    .cfg-row{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:8px; }
-    .cfg-row input{ padding:8px; border:1px solid #ccc; border-radius:8px; }
-    .mt8{ margin-top:8px; }
-  </style>
-</head>
-<body>
-  <header>
-    <nav>
-      <a href="index.html">Consulta personal</a>
-      <a href="rol.html">Rol de turnos</a>
-    </nav>
-    <img src="icons/cemex_logo.png" alt="CEMEX" onerror="this.style.display='none';"/>
-  </header>
+<script>
+  // ===== DATOS FIJOS / BASE =====
+  const BASE_MONDAY_DMY = "20/10/2025"; // semana base (lunes)
+  const TURNOS = [
+    { titulo:"Turno 1 - Mañana (Full)", horario:"7:00 a.m. - 3:00 p.m." },
+    { titulo:"Turno 2 - Noche",         horario:"11:00 p.m. - 7:00 a.m." },
+    { titulo:"Turno 3 - Tarde (Full)",  horario:"3:00 p.m. - 11:00 p.m." },
+    { titulo:"Turno 4 - Agregado",      horario:"8:00 a.m. - 5:00 p.m." }
+  ];
+  // Semana base (20/10/2025): T1=Marisol, T2=Gualberto, T3=Humberto, T4=Edgar
+  const PEOPLE_BASE = ["Marisol Caldera","Gualberto Rodriguez","Humberto Castillo","Edgar Pérez"];
 
-  <main>
-    <h1>Rol de turnos</h1>
+  // ===== PERSISTENCIA (para personalizar nombres/horarios en el dispositivo) =====
+  const Store = {
+    load(k, d){ try{ return JSON.parse(localStorage.getItem(k)) ?? d } catch { return d } },
+    save(k, v){ localStorage.setItem(k, JSON.stringify(v)); }
+  };
+  let customPeople = Store.load("rolPeople", PEOPLE_BASE.slice());
+  const turnosDef = Store.load("rolTurnosDef", TURNOS.map(t=>({...t})));
 
-    <div class="row">
-      <input id="fecha" type="date">
-      <button id="btnConsultar">Consultar</button>
-    </div>
+  // ===== FECHAS (DST-safe para calcular semanas) =====
+  function parseDMY(s){ const [d,m,y]=s.trim().split(/[\/\-]/).map(n=>parseInt(n,10)); return new Date(y,m-1,d); }
+  const fmtDMY = d => d.toLocaleDateString("es-MX",{day:"2-digit",month:"2-digit",year:"numeric"});
+  const isoForInput = d => new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10);
 
-    <div id="encabezado" class="muted mt8"></div>
+  const asUTC = d => new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const dayIndexUTC = d => Math.floor(asUTC(d).getTime()/86400000);
+  const mondayIndexUTC = d => { const u=asUTC(d); const dow=(u.getUTCDay()+6)%7; return dayIndexUTC(d)-dow; };
 
-    <div class="grid" id="gridTurnos"></div>
+  // Para mostrar el LUNES en horario local (evita ver “domingo”)
+  function mondayLocalOf(date){
+    const dt = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const dow = (dt.getDay()+6)%7; // lunes=0
+    dt.setDate(dt.getDate()-dow);
+    return dt;
+  }
 
-    <div class="mt8">
-      <button id="btnToggleCfg">⚙️ Configuración</button>
-      <div id="configPanel">
-        <div class="muted">Nombres y horarios de la <b>semana base</b>. Rotan semanalmente (lunes→domingo).</div>
-        <div class="cfg-row">
-          <input id="t1Nombre" placeholder="Turno 1 - nombre">
-          <input id="t1Horario" placeholder="Turno 1 - horario">
-        </div>
-        <div class="cfg-row">
-          <input id="t2Nombre" placeholder="Turno 2 - nombre">
-          <input id="t2Horario" placeholder="Turno 2 - horario">
-        </div>
-        <div class="cfg-row">
-          <input id="t3Nombre" placeholder="Turno 3 - nombre">
-          <input id="t3Horario" placeholder="Turno 3 - horario">
-        </div>
-        <div class="cfg-row">
-          <input id="t4Nombre" placeholder="Turno 4 - nombre">
-          <input id="t4Horario" placeholder="Turno 4 - horario">
-        </div>
-        <button id="btnGuardar">Guardar</button>
-        <button id="btnReset" class="secondary" style="margin-left:8px;">Restablecer</button>
-      </div>
-    </div>
+  // rotación
+  const rotateRight = (arr,n)=>{ const a=arr.slice(); const k=((n%a.length)+a.length)%a.length; return k? a.slice(-k).concat(a.slice(0,-k)) : a; };
 
-    <p class="muted mt8">Base: T1=Marisol, T2=Gualberto, T3=Humberto, T4=Edgar. Semana base = la del lunes configurado en “Consulta personal”.</p>
-  </main>
+  // semanas transcurridas desde la base (entero)
+  const BASE_IDX = mondayIndexUTC(parseDMY(BASE_MONDAY_DMY));
+  function weeksSinceBase(date){ return mondayIndexUTC(date) - BASE_IDX; }
 
-  <script>
-    // ===== Persistencia
-    const Store = { load(k,d){ try{return JSON.parse(localStorage.getItem(k))??d}catch{return d} }, save(k,v){ localStorage.setItem(k,JSON.stringify(v)) } };
+  // ===== UI refs =====
+  const $fecha=document.getElementById("fecha");
+  const $btn=document.getElementById("btnConsultar");
+  const $enc=document.getElementById("encabezado");
+  const $grid=document.getElementById("gridTurnos");
 
-    // ===== Leer settings compartidos
-    let settings = Store.load("settingsSimple", {
-      startMondayISO: "2025-10-20",
-      baseShift: 1,
-      cycleWeeks: 4
-    });
+  const $btnToggleCfg=document.getElementById("btnToggleCfg");
+  const $cfg=document.getElementById("configPanel");
+  const $t1Nombre=document.getElementById("t1Nombre"), $t1Horario=document.getElementById("t1Horario");
+  const $t2Nombre=document.getElementById("t2Nombre"), $t2Horario=document.getElementById("t2Horario");
+  const $t3Nombre=document.getElementById("t3Nombre"), $t3Horario=document.getElementById("t3Horario");
+  const $t4Nombre=document.getElementById("t4Nombre"), $t4Horario=document.getElementById("t4Horario");
+  const $btnGuardar=document.getElementById("btnGuardar"), $btnReset=document.getElementById("btnReset");
 
-    // ===== Datos base (puedes editarlos en el panel)
-    const turnosDef = [
-      { titulo:"Turno 1 - Mañana (Full)", horario:"7:00 a.m. - 3:00 p.m." },
-      { titulo:"Turno 2 - Noche",         horario:"11:00 p.m. - 7:00 a.m." },
-      { titulo:"Turno 3 - Tarde (Full)",  horario:"3:00 p.m. - 11:00 p.m." },
-      { titulo:"Turno 4 - Agregado",      horario:"8:00 a.m. - 5:00 p.m." }
-    ];
-    const defaultPeople = ["Marisol Caldera", "Gualberto Rodriguez", "Humberto Castillo", "Edgar Pérez"];
-    let customPeople = Store.load("rolPeople", defaultPeople.slice());
+  $fecha.value = isoForInput(new Date());
 
-    // ===== Fechas / DST-safe
-    const isoForInput = d => new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10);
-    const fmtDMY = d => d.toLocaleDateString("es-MX",{day:"2-digit",month:"2-digit",year:"numeric"});
-    function parseFlexible(s){
-      if(!s) return null;
-      s = s.trim();
-      if (/^\d{4}-\d{2}-\d{2}$/.test(s)) { const [y,m,d]=s.split("-").map(n=>parseInt(n,10)); return new Date(y,m-1,d); }
-      const parts = s.replace(/-/g,"/").split("/"); if(parts.length===3){ const [d,m,y]=parts.map(n=>parseInt(n,10)); if(y&&m&&d) return new Date(y,m-1,d); }
-      return null;
+  function render(fecha){
+    const w = weeksSinceBase(fecha);             // semanas desde la base
+    const mondayLocal = mondayLocalOf(fecha);    // lunes en horario local
+    // *** AJUSTE CLAVE: rotamos con -w para que 27/10/2025 dé (Edgar, Marisol, Gualberto, Humberto) ***
+    const peopleRotated = rotateRight(customPeople, -w);
+
+    $enc.textContent = `🗓 Fecha: ${fmtDMY(fecha)} — 📅 Semana iniciada el: ${fmtDMY(mondayLocal)}`;
+    $grid.innerHTML = "";
+    for (let i=0;i<4;i++){
+      const t = turnosDef[i];
+      const p = peopleRotated[i];
+      const card = document.createElement("div");
+      card.className="card";
+      card.innerHTML = `
+        <div class="title">${t.titulo}</div>
+        <div><strong>Horario:</strong> ${t.horario}</div>
+        <div><strong>Nombre:</strong> ${p}</div>
+      `;
+      $grid.appendChild(card);
     }
-    const asUTC = d => new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
-    const dayIndexUTC = d => Math.floor(asUTC(d).getTime()/86400000);
-    const mondayIndexUTC = d => { const u=asUTC(d); const dow=(u.getUTCDay()+6)%7; return dayIndexUTC(d)-dow; };
-    const mondayLocalFromIndex = idx => new Date(idx*86400000);
-    const rotateRight = (arr,n)=>{ const a=arr.slice(); const k=((n%a.length)+a.length)%a.length; return k? a.slice(-k).concat(a.slice(0,-k)) : a; };
+  }
 
-    function weeksSinceBase(date){
-      const wDate = mondayIndexUTC(date);
-      const wBase = mondayIndexUTC(parseFlexible(settings.startMondayISO));
-      return wDate - wBase;
+  $btn.addEventListener("click", ()=>{
+    const d = $fecha.value ? new Date($fecha.value+"T12:00:00") : new Date();
+    render(d);
+  });
+
+  // Panel de personalización (opcional)
+  $btnToggleCfg.addEventListener("click", ()=>{
+    const show = $cfg.style.display!=="block";
+    $cfg.style.display = show ? "block" : "none";
+    if (show){
+      [$t1Nombre,$t2Nombre,$t3Nombre,$t4Nombre].forEach((i,idx)=> i.value = customPeople[idx]);
+      [$t1Horario,$t2Horario,$t3Horario,$t4Horario].forEach((i,idx)=> i.value = turnosDef[idx].horario);
     }
+  });
 
-    // ===== UI refs
-    const $fecha=document.getElementById("fecha"), $btn=document.getElementById("btnConsultar");
-    const $enc=document.getElementById("encabezado"), $grid=document.getElementById("gridTurnos");
-    const $btnToggleCfg=document.getElementById("btnToggleCfg"), $cfg=document.getElementById("configPanel");
-    const $t1Nombre=document.getElementById("t1Nombre"), $t1Horario=document.getElementById("t1Horario");
-    const $t2Nombre=document.getElementById("t2Nombre"), $t2Horario=document.getElementById("t2Horario");
-    const $t3Nombre=document.getElementById("t3Nombre"), $t3Horario=document.getElementById("t3Horario");
-    const $t4Nombre=document.getElementById("t4Nombre"), $t4Horario=document.getElementById("t4Horario");
-    const $btnGuardar=document.getElementById("btnGuardar"), $btnReset=document.getElementById("btnReset");
+  $btnGuardar.addEventListener("click", ()=>{
+    customPeople[0] = $t1Nombre.value || customPeople[0];
+    customPeople[1] = $t2Nombre.value || customPeople[1];
+    customPeople[2] = $t3Nombre.value || customPeople[2];
+    customPeople[3] = $t4Nombre.value || customPeople[3];
+    turnosDef[0].horario = $t1Horario.value || turnosDef[0].horario;
+    turnosDef[1].horario = $t2Horario.value || turnosDef[1].horario;
+    turnosDef[2].horario = $t3Horario.value || turnosDef[2].horario;
+    turnosDef[3].horario = $t4Horario.value || turnosDef[3].horario;
+    Store.save("rolPeople", customPeople);
+    Store.save("rolTurnosDef", turnosDef);
+    alert("Cambios guardados ✅");
+    const d = $fecha.value ? new Date($fecha.value+"T12:00:00") : new Date();
+    render(d);
+  });
 
-    $fecha.value = isoForInput(new Date());
+  $btnReset.addEventListener("click", ()=>{
+    if (!confirm("¿Restablecer valores por defecto?")) return;
+    customPeople = PEOPLE_BASE.slice();
+    for(let i=0;i<4;i++){ turnosDef[i].horario = TURNOS[i].horario; turnosDef[i].titulo = TURNOS[i].titulo; }
+    Store.save("rolPeople", customPeople);
+    Store.save("rolTurnosDef", turnosDef);
+    const d = $fecha.value ? new Date($fecha.value+"T12:00:00") : new Date();
+    render(d);
+    alert("Listo");
+  });
 
-    function render(fecha){
-      const w = weeksSinceBase(fecha);
-      const monday = mondayLocalFromIndex(mondayIndexUTC(fecha));
-      const rotatedPeople = rotateRight(customPeople, w);
+  // Primer render
+  render(new Date());
 
-      $enc.textContent = `🗓 Fecha: ${fmtDMY(fecha)} — 📅 Semana iniciada el: ${fmtDMY(monday)}`;
-      $grid.innerHTML = "";
-      for (let i=0;i<4;i++){
-        const t = turnosDef[i];
-        const p = rotatedPeople[i];
-        const card = document.createElement("div");
-        card.className="card";
-        card.innerHTML = `
-          <div class="title">${t.titulo}</div>
-          <div><strong>Horario:</strong> ${t.horario}</div>
-          <div><strong>Nombre:</strong> ${p}</div>
-        `;
-        $grid.appendChild(card);
-      }
-    }
-
-    $btn.addEventListener("click", ()=>{
-      const d = $fecha.value ? new Date($fecha.value+"T12:00:00") : new Date();
-      render(d);
-    });
-
-    $btnToggleCfg.addEventListener("click", ()=>{
-      const show = $cfg.style.display!=="block";
-      $cfg.style.display = show?"block":"none";
-      if (show){
-        $t1Nombre.value = customPeople[0]; $t1Horario.value = turnosDef[0].horario;
-        $t2Nombre.value = customPeople[1]; $t2Horario.value = turnosDef[1].horario;
-        $t3Nombre.value = customPeople[2]; $t3Horario.value = turnosDef[2].horario;
-        $t4Nombre.value = customPeople[3]; $t4Horario.value = turnosDef[3].horario;
-      }
-    });
-
-    $btnGuardar.addEventListener("click", ()=>{
-      customPeople[0] = $t1Nombre.value || customPeople[0];
-      customPeople[1] = $t2Nombre.value || customPeople[1];
-      customPeople[2] = $t3Nombre.value || customPeople[2];
-      customPeople[3] = $t4Nombre.value || customPeople[3];
-      Store.save("rolPeople", customPeople);
-
-      if ($t1Horario.value) turnosDef[0].horario = $t1Horario.value;
-      if ($t2Horario.value) turnosDef[1].horario = $t2Horario.value;
-      if ($t3Horario.value) turnosDef[2].horario = $t3Horario.value;
-      if ($t4Horario.value) turnosDef[3].horario = $t4Horario.value;
-
-      alert("Cambios guardados ✅");
-      const d = $fecha.value ? new Date($fecha.value+"T12:00:00") : new Date();
-      render(d);
-    });
-
-    $btnReset.addEventListener("click", ()=>{
-      if (!confirm("¿Restablecer por defecto?")) return;
-      customPeople = defaultPeople.slice();
-      turnosDef[0].horario="7:00 a.m. - 3:00 p.m.";
-      turnosDef[1].horario="11:00 p.m. - 7:00 a.m.";
-      turnosDef[2].horario="3:00 p.m. - 11:00 p.m.";
-      turnosDef[3].horario="8:00 a.m. - 5:00 p.m.";
-      Store.save("rolPeople", customPeople);
-      const d = $fecha.value ? new Date($fecha.value+"T12:00:00") : new Date();
-      render(d);
-      alert("Listo");
-    });
-
-    // Primer render
-    render(new Date());
-  </script>
-</body>
-</html>
+  // (opcional) registra el SW si existe
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', ()=> navigator.serviceWorker.register('sw.js'));
+  }
+</script>
